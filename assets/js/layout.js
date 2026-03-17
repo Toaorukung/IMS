@@ -3,20 +3,26 @@
 // ============================================================
 
 function initLayout(activePage) {
-  const menuMain = [
+  const isAdmin = Auth.isAdmin(); // อ่านจาก closure — ไม่ได้อ่านจาก sessionStorage
+
+  const menuMain = isAdmin ? [
     { key: 'home',      icon: 'fa-tachometer-alt', label: 'แดชบอร์ด',           url: '/dashboard/home/' },
     { key: 'purchase',  icon: 'fa-shopping-cart',  label: 'สั่งซื้อสินค้า',      url: '/dashboard/purchase/' },
     { key: 'receive',   icon: 'fa-truck-loading',  label: 'รับสินค้า / ต้นทุน',  url: '/dashboard/receive/' },
     { key: 'stock',     icon: 'fa-warehouse',      label: 'สต็อคสินค้า',         url: '/dashboard/stock/' }
-  ];
-  const menuWithdrawal = [
+  ] : [];
+
+  const menuWithdrawal = isAdmin ? [
     { key: 'withdrawal', icon: 'fa-file-export', label: 'เบิกสินค้า',    url: '/dashboard/withdrawal/' },
     { key: 'recipients', icon: 'fa-users',       label: 'ผู้รับสินค้า',  url: '/dashboard/recipients/' }
+  ] : [
+    { key: 'withdrawal', icon: 'fa-file-export', label: 'เบิกสินค้า',    url: '/dashboard/withdrawal/' }
   ];
-  const menuSettings = [
+
+  const menuSettings = isAdmin ? [
     { key: 'report',   icon: 'fa-chart-bar', label: 'รายงานรายเดือน', url: '/dashboard/report/' },
     { key: 'products', icon: 'fa-tags',      label: 'จัดการสินค้า',   url: '/dashboard/products/' }
-  ];
+  ] : [];
 
   function makeNavItems(items) {
     return items.map(item =>
@@ -33,12 +39,12 @@ function initLayout(activePage) {
         <div class="sidebar-brand-ver">พี่วุฒิ v1.0</div>
       </div>
     </div>
-    <div class="sidebar-section-label">เมนูหลัก</div>
-    <ul class="sidebar-nav list-unstyled">${makeNavItems(menuMain)}</ul>
+    ${isAdmin ? `<div class="sidebar-section-label">เมนูหลัก</div>
+    <ul class="sidebar-nav list-unstyled">${makeNavItems(menuMain)}</ul>` : ''}
     <div class="sidebar-section-label">การเบิกจ่าย</div>
     <ul class="sidebar-nav list-unstyled">${makeNavItems(menuWithdrawal)}</ul>
-    <div class="sidebar-section-label">รายงาน & ตั้งค่า</div>
-    <ul class="sidebar-nav list-unstyled">${makeNavItems(menuSettings)}</ul>
+    ${isAdmin ? `<div class="sidebar-section-label">รายงาน & ตั้งค่า</div>
+    <ul class="sidebar-nav list-unstyled">${makeNavItems(menuSettings)}</ul>` : ''}
     <div class="sidebar-footer">
       <div class="d-flex align-items-center gap-2">
         <div style="width:36px;height:36px;border-radius:50%;background:#1e293b;display:flex;align-items:center;justify-content:center;">

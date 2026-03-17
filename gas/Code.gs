@@ -87,17 +87,42 @@ function login(data) {
   if (!user) return { success: false, message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' };
   const token = Math.random().toString(36).substr(2) + Math.random().toString(36).substr(2);
   const tkSheet = getSheet('Tokens');
-  if (tkSheet) tkSheet.appendRow([token, user.id, user.username, now(), new Date(Date.now() + 86400000).toISOString()]);
+  if (tkSheet) {
+    // ลบ token เดิมของ user นี้ทั้งหมดก่อน (1 user = 1 token เท่านั้น)
+    const lastRow = tkSheet.getLastRow();
+    if (lastRow >= 2) {
+      const usernamCol = tkSheet.getRange(2, 3, lastRow - 1, 1).getValues(); // column 3 = username
+      for (let i = usernamCol.length - 1; i >= 0; i--) {
+        if (String(usernamCol[i][0]) === String(user.username)) {
+          tkSheet.deleteRow(i + 2);
+        }
+      }
+    }
+    tkSheet.appendRow([token, user.id, user.username, now(), new Date(Date.now() + 86400000).toISOString()]);
+  }
   return { success: true, token, user: { id: user.id, username: user.username, name: user.name, role: user.role } };
 }
 
 function validateToken(data) {
-  const sheet = getSheet('Tokens');
-  if (!sheet) return { success: false };
-  const tokens = sheetToObjects(sheet);
+  const tkSheet = getSheet('Tokens');
+  if (!tkSheet) return { success: false };
+  const tokens = sheetToObjects(tkSheet);
   const tk = tokens.find(t => t.token === data.token);
   if (!tk) return { success: false };
-  return { success: true, username: tk.username };
+
+  // ตรวจสอบวันหมดอายุ
+  if (tk.expires_at && new Date() > new Date(tk.expires_at)) {
+    return { success: false, message: 'Token หมดอายุ กรุณาเข้าสู่ระบบใหม่' };
+  }
+
+  // ดึงข้อมูล user พร้อม role จากชีท Users
+  const userSheet = getSheet('Users');
+  if (!userSheet) return { success: false };
+  const users = sheetToObjects(userSheet);
+  const user = users.find(u => u.username === tk.username && u.status === 'active');
+  if (!user) return { success: false, message: 'บัญชีถูกระงับหรือไม่พบในระบบ' };
+
+  return { success: true, user: { id: user.id, username: user.username, name: user.name, role: user.role } };
 }
 
 // ---------- Products ----------

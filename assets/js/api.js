@@ -59,23 +59,55 @@ const API = (() => {
   };
 })();
 
-// ---------- Auth Helpers (ใช้ใน dashboard.html) ----------
-const Auth = {
-  getToken: () => sessionStorage.getItem(CONFIG.TOKEN_KEY),
-  getUser:  () => {
-    const u = sessionStorage.getItem(CONFIG.USER_KEY);
-    return u ? JSON.parse(u) : null;
-  },
-  save: (token, user) => {
-    sessionStorage.setItem(CONFIG.TOKEN_KEY, token);
-    sessionStorage.setItem(CONFIG.USER_KEY, JSON.stringify(user));
-  },
-  clear: () => {
-    sessionStorage.removeItem(CONFIG.TOKEN_KEY);
-    sessionStorage.removeItem(CONFIG.USER_KEY);
-  },
-  isLoggedIn: () => !!sessionStorage.getItem(CONFIG.TOKEN_KEY)
-};
+// ---------- Auth Helpers (ใช้ใน dashboard) ----------
+// Auth ถูกห่อด้วย IIFE เพื่อซ่อน _verifiedRole ไว้ใน closure
+// ไม่สามารถอ่านหรือแก้ไขได้จาก DevTools / sessionStorage โดยตรง
+const Auth = (() => {
+  // private — ไม่ expose ออกสู่ global scope
+  let _verifiedRole = null;
+
+  return {
+    getToken: () => sessionStorage.getItem(CONFIG.TOKEN_KEY),
+    getUser:  () => {
+      const u = sessionStorage.getItem(CONFIG.USER_KEY);
+      return u ? JSON.parse(u) : null;
+    },
+    save: (token, user) => {
+      sessionStorage.setItem(CONFIG.TOKEN_KEY, token);
+      sessionStorage.setItem(CONFIG.USER_KEY, JSON.stringify(user));
+    },
+    clear: () => {
+      _verifiedRole = null;
+      sessionStorage.removeItem(CONFIG.TOKEN_KEY);
+      sessionStorage.removeItem(CONFIG.USER_KEY);
+    },
+    isLoggedIn: () => !!sessionStorage.getItem(CONFIG.TOKEN_KEY),
+
+    /**
+     * ตรวจสอบ token กับ server ทุกครั้งที่โหลดหน้า
+     * role ที่ได้จะถูกเก็บใน closure (_verifiedRole) เท่านั้น
+     * — แก้ไข sessionStorage จาก DevTools ไม่มีผลต่อ role นี้
+     * @returns {{ ok: boolean, user?: object }}
+     */
+    verifyAccess: async () => {
+      const token = sessionStorage.getItem(CONFIG.TOKEN_KEY);
+      if (!token) { _verifiedRole = null; return { ok: false }; }
+      try {
+        const res = await API.validateToken(token);
+        if (res && res.success && res.user) {
+          _verifiedRole = res.user.role;                          // เก็บใน closure
+          sessionStorage.setItem(CONFIG.USER_KEY, JSON.stringify(res.user)); // sync display
+          return { ok: true, user: res.user };
+        }
+      } catch (_) { /* network error */ }
+      _verifiedRole = null;
+      return { ok: false };
+    },
+
+    /** true เฉพาะเมื่อ server ยืนยันว่าเป็น admin */
+    isAdmin: () => _verifiedRole === 'admin'
+  };
+})();
 
 // ---------- Format Helpers ----------
 const Fmt = {

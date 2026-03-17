@@ -15,29 +15,35 @@ const App = {
 };
 
 /* ===== INIT ===== */
-$(document).ready(function () {
-  // Check auth
-  if (!Auth.isLoggedIn()) { window.location.href = '../../login'; return; }
-  App.user = Auth.getUser();
-  if (!App.user) { window.location.href = '../../login'; return; }
+$(document).ready(async function () {
+  const page = document.body.dataset.page || 'home';
 
-  // Show user info
+  // 1. ตรวจสอบ token กับ server ทุกครั้ง (ไม่เชื่อ role ใน sessionStorage)
+  const check = await Auth.verifyAccess();
+  if (!check.ok) { window.location.replace('/login/'); return; }
+
+  App.user = check.user;
+
+  // 2. ถ้าไม่ใช่ admin → อนุญาตเฉพาะหน้าเบิกสินค้าเท่านั้น
+  //    การตรวจสอบอ้างอิง Auth.isAdmin() ซึ่งอ่านจาก closure ที่ไม่สามารถแก้ได้จากภายนอก
+  const STAFF_ALLOWED_PAGES = ['withdrawal'];
+  if (!Auth.isAdmin() && !STAFF_ALLOWED_PAGES.includes(page)) {
+    window.location.replace('/dashboard/withdrawal/');
+    return;
+  }
+
+  // 3. Render sidebar (menu จะแสดงตาม role ที่ server ยืนยัน)
+  if (typeof initLayout === 'function') initLayout(page);
+
+  // 4. แสดงข้อมูล user
   $('#user-name').text(App.user.name || App.user.username);
-  $('#user-role').text(App.user.role === 'admin' ? 'ผู้ดูแลระบบ' : 'พนักงาน');
+  $('#user-role').text(Auth.isAdmin() ? 'ผู้ดูแลระบบ' : 'พนักงาน');
 
   // Logout
   $('#btn-logout').on('click', function () {
     Auth.clear();
-    window.location.href = '../../login';
+    window.location.replace('/login/');
   });
-
-  // Init layout (sidebar)
-  const page = document.body.dataset.page || 'home';
-  if (typeof initLayout === 'function') initLayout(page);
-
-  // Re-show user info after sidebar rendered
-  $('#user-name').text(App.user.name || App.user.username);
-  $('#user-role').text(App.user.role === 'admin' ? 'ผู้ดูแลระบบ' : 'พนักงาน');
 
   // Prefetch shared data
   prefetchData();

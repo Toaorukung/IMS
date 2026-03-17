@@ -82,8 +82,8 @@
 <script src="../assets/js/api.js"></script>
 <script>
 $(document).ready(function () {
-  // If already logged in → go to dashboard
-  if (Auth.isLoggedIn()) { window.location.href = '../dashboard/home/'; return; }
+  // If already logged in → go to dashboard (role determined by server on array page load)
+  if (Auth.isLoggedIn()) { window.location.replace('../dashboard/home/'); return; }
 
   // Toggle password visibility
   $('#toggle-password').on('click', function () {
@@ -119,10 +119,11 @@ async function doLogin() {
     const res = await API.login(username, password);
     if (res.success) {
       Auth.save(res.token, res.user);
-      // Redirect with brief success flash
+      // Redirect ตาม role: admin → home, staff → withdrawal
+      const dest = res.user.role === 'admin' ? '/dashboard/home/' : '/dashboard/withdrawal/';
       $('#login-alert').removeClass('alert-danger d-none').addClass('alert-success')
         .html('<i class="fas fa-check-circle me-2"></i>เข้าสู่ระบบสำเร็จ! กำลังนำทาง...');
-      setTimeout(() => { window.location.href = '../dashboard/home/'; }, 800);
+      setTimeout(() => { window.location.replace(dest); }, 800);
     } else {
       showAlert(res.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
       setLoading(false);
