@@ -4,18 +4,18 @@
 
 function initLayout(activePage) {
   const menuMain = [
-    { key: 'home',      icon: 'fa-tachometer-alt', label: 'แดชบอร์ด',           url: '../home/' },
-    { key: 'purchase',  icon: 'fa-shopping-cart',  label: 'สั่งซื้อสินค้า',      url: '../purchase/' },
-    { key: 'receive',   icon: 'fa-truck-loading',  label: 'รับสินค้า / ต้นทุน',  url: '../receive/' },
-    { key: 'stock',     icon: 'fa-warehouse',      label: 'สต็อคสินค้า',         url: '../stock/' }
+    { key: 'home',      icon: 'fa-tachometer-alt', label: 'แดชบอร์ด',           url: '/dashboard/home/' },
+    { key: 'purchase',  icon: 'fa-shopping-cart',  label: 'สั่งซื้อสินค้า',      url: '/dashboard/purchase/' },
+    { key: 'receive',   icon: 'fa-truck-loading',  label: 'รับสินค้า / ต้นทุน',  url: '/dashboard/receive/' },
+    { key: 'stock',     icon: 'fa-warehouse',      label: 'สต็อคสินค้า',         url: '/dashboard/stock/' }
   ];
   const menuWithdrawal = [
-    { key: 'withdrawal', icon: 'fa-file-export', label: 'เบิกสินค้า',    url: '../withdrawal/' },
-    { key: 'recipients', icon: 'fa-users',       label: 'ผู้รับสินค้า',  url: '../recipients/' }
+    { key: 'withdrawal', icon: 'fa-file-export', label: 'เบิกสินค้า',    url: '/dashboard/withdrawal/' },
+    { key: 'recipients', icon: 'fa-users',       label: 'ผู้รับสินค้า',  url: '/dashboard/recipients/' }
   ];
   const menuSettings = [
-    { key: 'report',   icon: 'fa-chart-bar', label: 'รายงานรายเดือน', url: '../report/' },
-    { key: 'products', icon: 'fa-tags',      label: 'จัดการสินค้า',   url: '../products/' }
+    { key: 'report',   icon: 'fa-chart-bar', label: 'รายงานรายเดือน', url: '/dashboard/report/' },
+    { key: 'products', icon: 'fa-tags',      label: 'จัดการสินค้า',   url: '/dashboard/products/' }
   ];
 
   function makeNavItems(items) {
