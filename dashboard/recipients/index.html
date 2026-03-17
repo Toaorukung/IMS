@@ -1,0 +1,103 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ผู้รับสินค้า – ระบบเบิกสินค้าและจัดการคลังสินค้า (Inventory Management System)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-page="recipients">
+<div id="wrapper">
+
+<nav id="sidebar"></nav>
+
+<div id="main-content">
+  <div id="topbar">
+    <div class="d-flex align-items-center gap-3">
+      <button id="sidebar-toggle" class="btn btn-sm btn-outline-secondary d-lg-none"><i class="fas fa-bars"></i></button>
+      <div class="topbar-title" id="topbar-title">ผู้รับสินค้า</div>
+    </div>
+    <div class="topbar-actions">
+      <a href="../home/" class="btn btn-sm btn-outline-secondary" title="หน้าหลัก"><i class="fas fa-home"></i></a>
+      <button id="btn-logout" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt me-1"></i>ออกจากระบบ</button>
+    </div>
+  </div>
+
+  <div class="page-body">
+  <div class="section-header mb-3">
+    <div class="section-header-title"><i class="fas fa-users me-2 text-primary"></i>ผู้รับสินค้า</div>
+    <button class="btn btn-primary" onclick="openAddRecipient()"><i class="fas fa-plus me-1"></i>เพิ่มผู้รับ</button>
+  </div>
+  <div class="panel">
+    <div class="table-responsive">
+      <table class="table">
+        <thead><tr><th>ชื่อ</th><th>แผนก</th><th>ตำแหน่ง</th><th>โทรศัพท์</th><th>อีเมล</th><th>จัดการ</th></tr></thead>
+        <tbody id="recipients-table-body">
+          <tr><td colspan="6" class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  </div><!-- end .page-body -->
+</div><!-- end #main-content -->
+</div><!-- end #wrapper -->
+
+<div id="toast-container"></div>
+
+<!-- MODAL: เพิ่ม/แก้ไขผู้รับสินค้า -->
+<div class="modal fade" id="modalRecipient" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalRecipientLabel"><i class="fas fa-user-plus me-2"></i>เพิ่มผู้รับสินค้า</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="recipient-form">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label">ชื่อ-นามสกุล <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="rcp-name" placeholder="ชื่อ-นามสกุล">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">แผนก</label>
+              <input type="text" class="form-control" id="rcp-dept" placeholder="แผนก">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">ตำแหน่ง</label>
+              <input type="text" class="form-control" id="rcp-pos" placeholder="ตำแหน่ง">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">โทรศัพท์</label>
+              <input type="tel" class="form-control" id="rcp-phone" placeholder="เบอร์โทร">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">อีเมล</label>
+              <input type="email" class="form-control" id="rcp-email" placeholder="อีเมล">
+            </div>
+            <div class="col-12">
+              <label class="form-label">หมายเหตุ</label>
+              <textarea class="form-control" id="rcp-notes" rows="2"></textarea>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-primary" id="btn-save-rcp" onclick="saveRecipient()"><i class="fas fa-save me-1"></i>บันทึก</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/api.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/app.js"></script>
+</body>
+</html>

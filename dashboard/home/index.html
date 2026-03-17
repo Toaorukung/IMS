@@ -1,0 +1,136 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>แดชบอร์ด – ระบบเบิกสินค้าและจัดการคลังสินค้า (Inventory Management System)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-page="home">
+<div id="wrapper">
+
+<nav id="sidebar"></nav>
+
+<div id="main-content">
+  <div id="topbar">
+    <div class="d-flex align-items-center gap-3">
+      <button id="sidebar-toggle" class="btn btn-sm btn-outline-secondary d-lg-none"><i class="fas fa-bars"></i></button>
+      <div class="topbar-title">แดชบอร์ด</div>
+    </div>
+    <div class="topbar-actions">
+      <button id="btn-logout" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt me-1"></i>ออกจากระบบ</button>
+    </div>
+  </div>
+
+  <div class="page-body">
+  <!-- STAT CARDS -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+      <div class="stat-card stat-blue">
+        <div class="stat-icon"><i class="fas fa-tags"></i></div>
+        <div class="stat-value" id="stat-products">–</div>
+        <div class="stat-label">สินค้าทั้งหมด</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="stat-card stat-green">
+        <div class="stat-icon"><i class="fas fa-warehouse"></i></div>
+        <div class="stat-value" id="stat-stock">–</div>
+        <div class="stat-label">สต็อครวม (ชิ้น)</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="stat-card stat-amber">
+        <div class="stat-icon"><i class="fas fa-shopping-cart"></i></div>
+        <div class="stat-value" id="stat-pending-imports">–</div>
+        <div class="stat-label">รอรับสินค้า</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="stat-card stat-red">
+        <div class="stat-icon"><i class="fas fa-file-export"></i></div>
+        <div class="stat-value" id="stat-today-withdrawals">–</div>
+        <div class="stat-label">เบิกวันนี้</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUICK ACTIONS -->
+  <div class="panel mb-4">
+    <div class="panel-header">
+      <div class="panel-title"><i class="fas fa-bolt me-2" style="color:#f59e0b"></i>ทางลัด</div>
+    </div>
+    <div class="panel-body">
+      <div class="row g-3">
+        <div class="col-6 col-md-3">
+          <div class="qa-card" onclick="window.location.href='../purchase/?new=1'">
+            <div class="qa-icon qa-blue"><i class="fas fa-shopping-cart"></i></div>
+            <div class="qa-label">สั่งซื้อสินค้า</div>
+            <div class="qa-sub">สร้างใบสั่งซื้อใหม่</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="qa-card" onclick="window.location.href='../withdrawal/?new=1'">
+            <div class="qa-icon qa-green"><i class="fas fa-file-export"></i></div>
+            <div class="qa-label">เบิกสินค้า</div>
+            <div class="qa-sub">ส่งคำขอเบิกใหม่</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="qa-card" onclick="window.location.href='../stock/'">
+            <div class="qa-icon qa-teal"><i class="fas fa-warehouse"></i></div>
+            <div class="qa-label">ดูสต็อค</div>
+            <div class="qa-sub">ตรวจสอบสินค้าคงเหลือ</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="qa-card" onclick="window.location.href='../report/'">
+            <div class="qa-icon qa-amber"><i class="fas fa-chart-bar"></i></div>
+            <div class="qa-label">รายงาน</div>
+            <div class="qa-sub">สรุปและวิเคราะห์ข้อมูล</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STOCK ALERT -->
+  <div id="stock-alert-panel" class="alert alert-warning d-none mb-4" role="alert">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <strong>สินค้าใกล้หมดสต็อค:</strong>
+    <span id="stock-alert-items"></span>
+    <a href="#" class="alert-link ms-2" onclick="loadSection('stock');return false;">ดูสต็อค →</a>
+  </div>
+
+  <!-- RECENT WITHDRAWALS -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title"><i class="fas fa-history me-2 text-primary"></i>การเบิกล่าสุด</div>
+      <a href="../withdrawal/" class="btn btn-sm btn-outline-primary">ดูทั้งหมด</a>
+    </div>
+    <div class="table-responsive">
+      <table class="table">
+        <thead><tr><th>รหัส</th><th>วันที่</th><th>ผู้เบิก</th><th class="text-center">รายการ</th><th>สถานะ</th></tr></thead>
+        <tbody id="recent-withdrawals-body">
+          <tr><td colspan="5" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div><!-- end panel -->
+
+  </div><!-- end .page-body -->
+</div><!-- end #main-content -->
+</div><!-- end #wrapper -->
+
+<div id="toast-container"></div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/api.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/app.js"></script>
+</body>
+</html>

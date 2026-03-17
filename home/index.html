@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบเบิกสินค้าและจัดการคลังสินค้า (Inventory Management System) – ระบบจัดการสินค้าและการเบิกของ</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<!-- ===== Navbar ===== -->
+<nav class="navbar navbar-expand-lg landing-navbar fixed-top">
+  <div class="container">
+    <a class="navbar-brand d-flex align-items-center gap-2 text-white" href="#top">
+      <div style="width:36px;height:36px;background:var(--primary);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:1rem;">
+        <i class="fas fa-boxes text-white"></i>
+      </div>
+      ระบบเบิกสินค้าและจัดการคลังสินค้า (Inventory Management System)
+    </a>
+    <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navMain"
+      style="color:#fff;">
+      <i class="fas fa-bars"></i>
+    </button>
+    <div class="collapse navbar-collapse justify-content-end" id="navMain">
+      <ul class="navbar-nav align-items-center gap-1">
+        <li class="nav-item"><a class="nav-link" href="#features">ฟีเจอร์</a></li>
+        <li class="nav-item"><a class="nav-link" href="#how-it-works">วิธีใช้งาน</a></li>
+        <li class="nav-item ms-lg-2">
+          <a class="nav-link btn-navbar-login px-3 py-2 rounded-3" href="../login">
+            <i class="fas fa-sign-in-alt me-1"></i>เข้าสู่ระบบ
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<!-- ===== Hero ===== -->
+<section class="hero-section" id="top">
+  <div class="container position-relative">
+    <div class="row align-items-center">
+      <div class="col-lg-7">
+        <div class="hero-badge hero-anim-badge">
+          <i class="fas fa-star me-1" style="font-size:.75rem;"></i>
+          ระบบเบิกของออนไลน์
+        </div>
+        <h1 class="hero-title mb-4 hero-anim-title">
+          จัดการสินค้า<br>
+          <span>อย่างมืออาชีพ</span>
+        </h1>
+        <p class="hero-subtitle mb-5 hero-anim-sub">
+          ระบบบริหารสต็อก รับสินค้า เบิกของ และติดตามรายงาน<br>
+          ครบวงจร ใช้งานง่าย เข้าถึงได้ทุกที่ทุกเวลา
+        </p>
+        <div class="d-flex flex-wrap gap-3 hero-anim-btns">
+          <a href="../login" class="btn btn-hero btn-hero-primary">
+            <i class="fas fa-rocket me-2"></i>เริ่มใช้งาน
+          </a>
+          <a href="#features" class="btn btn-hero btn-hero-outline">
+            <i class="fas fa-info-circle me-2"></i>ดูรายละเอียด
+          </a>
+        </div>
+        <div class="hero-stats hero-anim-stats">
+          <div>
+            <div class="hero-stat-num">4</div>
+            <div class="hero-stat-label">บทบาทผู้ใช้</div>
+          </div>
+          <div>
+            <div class="hero-stat-num">∞</div>
+            <div class="hero-stat-label">รายการสินค้า</div>
+          </div>
+          <div>
+            <div class="hero-stat-num">24/7</div>
+            <div class="hero-stat-label">เข้าถึงได้ตลอด</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hero visual -->
+      <div class="col-lg-5 d-none d-lg-flex justify-content-center mt-5 mt-lg-0">
+        <div class="hero-visual" style="position:relative;width:340px;height:340px;">
+          <!-- Glow -->
+          <div style="position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle,rgba(26,86,219,.35) 0%,transparent 70%);"></div>
+          <!-- Center icon -->
+          <div class="hero-icon-pulse" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+                      width:120px;height:120px;border-radius:30px;
+                      background:rgba(255,255,255,.1);backdrop-filter:blur(12px);
+                      border:1px solid rgba(255,255,255,.2);
+                      display:flex;align-items:center;justify-content:center;
+                      font-size:3rem;color:#fff;">
+            <i class="fas fa-boxes"></i>
+          </div>
+          <!-- Orbiting mini-cards ─ ไม่มี inline transform เพราะ CSS class จัดการแล้ว -->
+          <div class="hero-orbit-card orbit-top">
+            <i class="fas fa-shopping-cart text-primary me-1"></i><small>สั่งซื้อ</small>
+          </div>
+          <div class="hero-orbit-card orbit-bottom">
+            <i class="fas fa-chart-bar text-success me-1"></i><small>รายงาน</small>
+          </div>
+          <div class="hero-orbit-card orbit-left">
+            <i class="fas fa-cubes text-warning me-1"></i><small>สต็อก</small>
+          </div>
+          <div class="hero-orbit-card orbit-right">
+            <i class="fas fa-truck text-info me-1"></i><small>รับสินค้า</small>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Features ===== -->
+<section class="features-section" id="features">
+  <div class="container">
+    <div class="text-center mb-5 reveal">
+      <div class="section-label">ความสามารถของระบบ</div>
+      <h2 class="section-title">ฟีเจอร์ครบครัน พร้อมใช้งาน</h2>
+      <p class="text-muted mt-3" style="max-width:520px;margin:0 auto;">
+        ออกแบบมาเพื่อตอบโจทย์การจัดการสินค้าและคลังสินค้า ทั้งขนาดเล็กและขนาดใหญ่
+      </p>
+    </div>
+    <div class="row g-4 reveal-stagger">
+      <div class="col-md-6 col-lg-4">
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#dbeafe;color:#1a56db;">
+            <i class="fas fa-boxes"></i>
+          </div>
+          <div class="feature-title">จัดการสินค้า</div>
+          <p class="text-muted" style="font-size:.9rem;line-height:1.7;">
+            เพิ่ม แก้ไข และค้นหาสินค้าได้อย่างรวดเร็ว พร้อมรูปภาพและข้อมูลครบถ้วน
+          </p>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-4">
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#dcfce7;color:#16a34a;">
+            <i class="fas fa-warehouse"></i>
+          </div>
+          <div class="feature-title">ติดตามสต็อก</div>
+          <p class="text-muted" style="font-size:.9rem;line-height:1.7;">
+            ตรวจสอบปริมาณสินค้าคงคลังแบบ Real-time พร้อมแจ้งเตือนเมื่อสินค้าใกล้หมด
+          </p>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-4">
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#fef9c3;color:#ca8a04;">
+            <i class="fas fa-shopping-cart"></i>
+          </div>
+          <div class="feature-title">สั่งซื้อสินค้า</div>
+          <p class="text-muted" style="font-size:.9rem;line-height:1.7;">
+            บันทึกการสั่งซื้อจากซัพพลายเออร์ พร้อมคำนวณอัตราแลกเปลี่ยนอัตโนมัติ
+          </p>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-4">
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#ede9fe;color:#7c3aed;">
+            <i class="fas fa-truck"></i>
+          </div>
+          <div class="feature-title">รับสินค้า</div>
+          <p class="text-muted" style="font-size:.9rem;line-height:1.7;">
+            บันทึกการรับสินค้าเข้าคลัง เชื่อมโยงกับใบสั่งซื้อ อัพเดตสต็อกทันที
+          </p>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-4">
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#fee2e2;color:#dc2626;">
+            <i class="fas fa-hand-holding-box"></i>
+          </div>
+          <div class="feature-title">เบิกของ</div>
+          <p class="text-muted" style="font-size:.9rem;line-height:1.7;">
+            จัดการการเบิกสินค้าให้ผู้รับ บันทึกประวัติ ตรวจสอบย้อนหลังได้ตลอด
+          </p>
+        </div>
+      </div>
+      <div class="col-md-6 col-lg-4">
+        <div class="feature-card">
+          <div class="feature-icon" style="background:#e0f2fe;color:#0284c7;">
+            <i class="fas fa-chart-line"></i>
+          </div>
+          <div class="feature-title">รายงานสรุป</div>
+          <p class="text-muted" style="font-size:.9rem;line-height:1.7;">
+            สรุปข้อมูลการสั่งซื้อ รับสินค้า และเบิกของ พร้อม Export รายงานได้ทันที
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== How it works ===== -->
+<section class="flow-section" id="how-it-works">
+  <div class="container">
+    <div class="text-center mb-5 reveal">
+      <div class="section-label">ขั้นตอนการใช้งาน</div>
+      <h2 class="section-title">เริ่มต้นได้ใน 4 ขั้นตอน</h2>
+    </div>
+    <div class="row justify-content-center">
+      <div class="col-lg-7">
+        <div class="flow-step flow-reveal">
+          <div class="flow-num">1</div>
+          <div>
+            <div class="fw-700 mb-1" style="font-weight:700;">เพิ่มสินค้าในระบบ</div>
+            <div class="text-muted" style="font-size:.9rem;">ระบุชื่อ หมวดหมู่ ราคา และรูปภาพสินค้าเพื่อเตรียมพร้อมสำหรับการจัดการ</div>
+          </div>
+        </div>
+        <div class="flow-step flow-reveal">
+          <div class="flow-num">2</div>
+          <div>
+            <div class="fw-700 mb-1" style="font-weight:700;">สั่งซื้อและรับสินค้า</div>
+            <div class="text-muted" style="font-size:.9rem;">สร้างใบสั่งซื้อ บันทึกการรับสินค้า ระบบจะอัพเดตสต็อกให้โดยอัตโนมัติ</div>
+          </div>
+        </div>
+        <div class="flow-step flow-reveal">
+          <div class="flow-num">3</div>
+          <div>
+            <div class="fw-700 mb-1" style="font-weight:700;">เบิกสินค้าให้พนักงาน</div>
+            <div class="text-muted" style="font-size:.9rem;">เลือกรายการสินค้าและระบุผู้รับ บันทึกการเบิกพร้อมตัดสต็อกอัตโนมัติ</div>
+          </div>
+        </div>
+        <div class="flow-step flow-reveal">
+          <div class="flow-num">4</div>
+          <div>
+            <div class="fw-700 mb-1" style="font-weight:700;">ดูรายงานสรุป</div>
+            <div class="text-muted" style="font-size:.9rem;">ตรวจสอบข้อมูลทั้งหมดผ่านหน้ารายงาน กรองตามช่วงเวลาและ Export ได้ทันที</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== CTA ===== -->
+<section class="cta-section">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-lg-8">
+        <h2 style="font-size:2.2rem;font-weight:700;margin-bottom:16px;">พร้อมเริ่มใช้งานแล้วหรือยัง?</h2>
+        <p style="color:#94a3b8;font-size:1.1rem;margin-bottom:40px;">
+          เข้าสู่ระบบเพื่อเริ่มจัดการสินค้าและสต็อกของคุณได้เลย
+        </p>
+        <a href="../login" class="btn btn-hero btn-hero-primary" style="font-size:1.05rem;padding:16px 48px;">
+          <i class="fas fa-sign-in-alt me-2"></i>เข้าสู่ระบบ
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Footer ===== -->
+<footer style="background:#0f172a;color:#475569;text-align:center;padding:28px 16px;font-size:.85rem;">
+  <div class="mb-2">
+    <i class="fas fa-boxes me-2" style="color:var(--primary);"></i>
+    <span style="color:#94a3b8;font-weight:600;">ระบบเบิกสินค้าและจัดการคลังสินค้า (Inventory Management System)</span>
+  </div>
+  <div>&copy; 2025 – จัดทำด้วย Google Apps Script &amp; Vercel</div>
+</footer>
+
+<!-- Orbit-card style + Animations -->
+<style>
+  /* ── Orbit card base ── */
+  .hero-orbit-card {
+    position: absolute;
+    background: rgba(255,255,255,.13);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,.22);
+    border-radius: 10px;
+    padding: 8px 14px;
+    color: #fff;
+    font-size: .85rem;
+    white-space: nowrap;
+  }
+
+  /* Keyframes ── Hero text */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(32px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Keyframes ─ Orbit cards: แต่ละทิศ preserve BOTH axes */
+  @keyframes hvTop    { from{opacity:0;transform:translate(-50%,-18px)} to{opacity:1;transform:translate(-50%,0)} }
+  @keyframes hvBottom { from{opacity:0;transform:translate(-50%, 18px)} to{opacity:1;transform:translate(-50%,0)} }
+  @keyframes hvLeft   { from{opacity:0;transform:translate(-18px,-50%)} to{opacity:1;transform:translate(0,-50%)} }
+  @keyframes hvRight  { from{opacity:0;transform:translate( 18px,-50%)} to{opacity:1;transform:translate(0,-50%)} }
+
+  /* Card positions ── ใช้ CSS class แทน inline transform */
+  .orbit-top    { top:14px;    left:50%;  transform:translate(-50%,0);   opacity:0; animation:hvTop    .6s ease 1.2s both; }
+  .orbit-bottom { bottom:14px; left:50%;  transform:translate(-50%,0);   opacity:0; animation:hvBottom .6s ease 1.4s both; }
+  .orbit-left   { top:50%;     left:6px;  transform:translate(0,-50%);   opacity:0; animation:hvLeft   .6s ease 1.3s both; }
+  .orbit-right  { top:50%;     right:6px; transform:translate(0,-50%);   opacity:0; animation:hvRight  .6s ease 1.3s both; }
+  @keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.85); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes floatY {
+    0%, 100% { transform: translateY(0); }
+    50%       { transform: translateY(-12px); }
+  }
+  @keyframes pulse-ring {
+    0%   { transform: scale(1);   opacity: .5; }
+    100% { transform: scale(1.6); opacity: 0; }
+  }
+  @keyframes typewriter {
+    from { width: 0; }
+    to   { width: 100%; }
+  }
+  @keyframes orbitSpin {
+    from { transform: rotate(0deg)   translateX(130px) rotate(0deg); }
+    to   { transform: rotate(360deg) translateX(130px) rotate(-360deg); }
+  }
+  @keyframes navSlideDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    0%   { background-position: -200% center; }
+    100% { background-position:  200% center; }
+  }
+
+  /* ── Navbar entrance ── */
+  .landing-navbar { animation: navSlideDown .6s ease both; }
+
+  /* ── Hero text stagger ── */
+  .hero-anim-badge  { opacity:0; animation: fadeInUp .6s ease .2s both; }
+  .hero-anim-title  { opacity:0; animation: fadeInUp .7s ease .4s both; }
+  .hero-anim-sub    { opacity:0; animation: fadeInUp .7s ease .6s both; }
+  .hero-anim-btns   { opacity:0; animation: fadeInUp .7s ease .8s both; }
+  .hero-anim-stats  { opacity:0; animation: fadeInUp .7s ease 1s   both; }
+
+  /* ── Hero visual float ── */
+  .hero-visual { animation: floatY 4s ease-in-out infinite; }
+
+  /* ── Pulse ring on center icon ── */
+  .hero-icon-pulse::after {
+    content: '';
+    position: absolute; inset: -12px;
+    border-radius: 36px;
+    border: 2px solid rgba(96,165,250,.5);
+    animation: pulse-ring 2s ease-out infinite;
+  }
+
+  /* ── Orbit cards ── (positions defined in orbit-* above, no overrides needed) */
+
+  /* ── Shimmer on hero badge ── */
+  .hero-badge {
+    background: linear-gradient(90deg,
+      rgba(26,86,219,.3) 25%,
+      rgba(96,165,250,.5) 50%,
+      rgba(26,86,219,.3) 75%);
+    background-size: 200% auto;
+    animation: shimmer 3s linear infinite;
+  }
+
+  /* ── Scroll-reveal base ── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(36px);
+    transition: opacity .65s ease, transform .65s ease;
+  }
+  .reveal.from-left  { transform: translateX(-36px); }
+  .reveal.from-right { transform: translateX(36px);  }
+  .reveal.scale      { transform: scale(.9);         }
+  .reveal.visible {
+    opacity: 1;
+    transform: translate(0) scale(1);
+  }
+
+  /* staggered children */
+  .reveal-stagger > * {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity .55s ease, transform .55s ease;
+  }
+  .reveal-stagger.visible > *:nth-child(1) { opacity:1; transform:none; transition-delay:.05s; }
+  .reveal-stagger.visible > *:nth-child(2) { opacity:1; transform:none; transition-delay:.15s; }
+  .reveal-stagger.visible > *:nth-child(3) { opacity:1; transform:none; transition-delay:.25s; }
+  .reveal-stagger.visible > *:nth-child(4) { opacity:1; transform:none; transition-delay:.35s; }
+  .reveal-stagger.visible > *:nth-child(5) { opacity:1; transform:none; transition-delay:.45s; }
+  .reveal-stagger.visible > *:nth-child(6) { opacity:1; transform:none; transition-delay:.55s; }
+
+  /* ── Stat counter ── */
+  .hero-stat-num { transition: color .3s; }
+
+  /* ── Flow step left-slide ── */
+  .flow-reveal {
+    opacity: 0;
+    transform: translateX(-30px);
+    transition: opacity .55s ease, transform .55s ease;
+  }
+  .flow-reveal.visible { opacity:1; transform:none; }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  // ── Custom smooth scroll with easeInOutCubic ──
+  const NAVBAR_H = () => document.querySelector('.landing-navbar')?.offsetHeight || 70;
+
+  function smoothScrollTo(targetY, duration) {
+    const startY   = window.scrollY;
+    const distance = targetY - startY;
+    let startTime  = null;
+    function ease(t) {
+      // easeInOutCubic — ค่อยๆ เร่ง แล้วค่อยๆ ชะลอ
+      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+    function step(now) {
+      if (!startTime) startTime = now;
+      const elapsed  = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      window.scrollTo(0, startY + distance * ease(progress));
+      if (progress < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const href = a.getAttribute('href');
+      if (href === '#') return;
+      const target = document.querySelector(href);
+      if (!target) return;
+      e.preventDefault();
+      // Close mobile nav if open
+      const bsCollapse = document.getElementById('navMain');
+      if (bsCollapse?.classList.contains('show')) {
+        bootstrap.Collapse.getOrCreateInstance(bsCollapse).hide();
+      }
+      const top = target.getBoundingClientRect().top + window.scrollY - NAVBAR_H() - 12;
+      smoothScrollTo(top, 900); // 900ms = รู้สึกไถลลงชัดเจน
+    });
+  });
+
+  // ── Active nav link highlight on scroll ──
+  const sections = [
+    { id: 'features',    link: document.querySelector('a[href="#features"]') },
+    { id: 'how-it-works', link: document.querySelector('a[href="#how-it-works"]') }
+  ];
+  const navLinks = document.querySelectorAll('.landing-navbar .nav-link[href^="#"]');
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(s => {
+      const el = document.getElementById(s.id);
+      if (el && window.scrollY >= el.offsetTop - NAVBAR_H() - 40) current = s.id;
+    });
+    sections.forEach(s => {
+      if (!s.link) return;
+      if (s.id === current) {
+        s.link.style.color = '#fff';
+        s.link.style.fontWeight = '700';
+      } else {
+        s.link.style.color = '';
+        s.link.style.fontWeight = '';
+      }
+    });
+  }, { passive: true });
+
+  // ── Scroll-reveal with IntersectionObserver ──
+  const revealEls = document.querySelectorAll('.reveal, .reveal-stagger, .flow-reveal');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        // stagger sibling flow-reveal items
+        const delay = entry.target.classList.contains('flow-reveal')
+          ? Array.from(document.querySelectorAll('.flow-reveal')).indexOf(entry.target) * 120
+          : 0;
+        setTimeout(() => entry.target.classList.add('visible'), delay);
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.15 });
+  revealEls.forEach(el => observer.observe(el));
+
+  // ── Animated counters on hero stats ──
+  function countUp(el, target, suffix, duration) {
+    if (isNaN(target)) { el.textContent = suffix; return; }
+    let start = 0;
+    const step = target / (duration / 16);
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= target) { clearInterval(timer); el.textContent = target + suffix; return; }
+      el.textContent = Math.floor(start) + suffix;
+    }, 16);
+  }
+  // Trigger once hero is visible (it's already in view on load)
+  window.addEventListener('load', () => {
+    setTimeout(() => {
+      const nums = document.querySelectorAll('.hero-stat-num');
+      const data = [{ v: 4, s: '' }, { v: NaN, s: '∞' }, { v: NaN, s: '24/7' }];
+      nums.forEach((el, i) => countUp(el, data[i].v, data[i].s, 1200));
+    }, 1000);
+  });
+
+  // ── Navbar shadow on scroll ──
+  window.addEventListener('scroll', () => {
+    const nav = document.querySelector('.landing-navbar');
+    nav.style.boxShadow = window.scrollY > 20
+      ? '0 4px 24px rgba(0,0,0,.4)'
+      : 'none';
+  });
+</script>
+</body>
+</html>

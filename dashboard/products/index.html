@@ -1,0 +1,115 @@
+﻿<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>จัดการสินค้า – ระบบเบิกสินค้าและจัดการคลังสินค้า (Inventory Management System)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-page="products">
+<div id="wrapper">
+
+<nav id="sidebar"></nav>
+
+<div id="main-content">
+  <div id="topbar">
+    <div class="d-flex align-items-center gap-3">
+      <button id="sidebar-toggle" class="btn btn-sm btn-outline-secondary d-lg-none"><i class="fas fa-bars"></i></button>
+      <div class="topbar-title" id="topbar-title">จัดการสินค้า</div>
+    </div>
+    <div class="topbar-actions">
+      <a href="../home/" class="btn btn-sm btn-outline-secondary" title="หน้าหลัก"><i class="fas fa-home"></i></a>
+      <button id="btn-logout" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt me-1"></i>ออกจากระบบ</button>
+    </div>
+  </div>
+
+  <div class="page-body">
+  <div class="section-header mb-3">
+    <div class="section-header-title"><i class="fas fa-tags me-2 text-primary"></i>จัดการสินค้า</div>
+    <button class="btn btn-primary" onclick="openAddProduct()"><i class="fas fa-plus me-1"></i>เพิ่มสินค้า</button>
+  </div>
+  <div class="panel">
+    <div class="table-responsive">
+      <table class="table">
+        <thead><tr><th>รหัส</th><th>ชื่อสินค้า</th><th>หมวดหมู่</th><th class="text-center">หน่วย</th><th class="text-end">ต้นทุน</th><th class="text-end">ราคาขาย</th><th class="text-center">สต็อคขั้นต่ำ</th><th>จัดการ</th></tr></thead>
+        <tbody id="products-table-body">
+          <tr><td colspan="8" class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  </div><!-- end .page-body -->
+</div><!-- end #main-content -->
+</div><!-- end #wrapper -->
+
+<div id="toast-container"></div>
+
+<!-- MODAL: เพิ่ม/แก้ไขสินค้า -->
+<div class="modal fade" id="modalProduct" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalProductLabel"><i class="fas fa-tag me-2"></i>เพิ่มสินค้า</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="product-form">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">รหัสสินค้า</label>
+              <input type="text" class="form-control" id="prod-code" placeholder="รหัสสินค้า">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">ชื่อสินค้า <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="prod-name" placeholder="ชื่อสินค้า">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">หมวดหมู่</label>
+              <input type="text" class="form-control" id="prod-cat" placeholder="หมวดหมู่">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">หน่วย</label>
+              <select class="form-select" id="prod-unit">
+                <option>ชิ้น</option><option>กล่อง</option><option>ถุง</option>
+                <option>แพ็ค</option><option>โหล</option><option>กิโลกรัม</option>
+                <option>เมตร</option><option>ลิตร</option><option>อื่นๆ</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">สต็อคขั้นต่ำ</label>
+              <input type="number" class="form-control" id="prod-min" value="0" min="0">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">ต้นทุน/ชิ้น (฿)</label>
+              <input type="number" class="form-control" id="prod-cost" value="0" min="0" step="0.01">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">ราคาขาย/ชิ้น (฿)</label>
+              <input type="number" class="form-control" id="prod-sell" value="0" min="0" step="0.01">
+            </div>
+            <div class="col-12">
+              <label class="form-label">หมายเหตุ</label>
+              <textarea class="form-control" id="prod-notes" rows="2"></textarea>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-primary" id="btn-save-prod" onclick="saveProduct()"><i class="fas fa-save me-1"></i>บันทึก</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/api.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/app.js"></script>
+</body>
+</html>
