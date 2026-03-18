@@ -126,6 +126,60 @@
   </div>
 </div>
 
+<!-- MODAL: รับสินค้า + ต้นทุนนำเข้า -->
+<div class="modal fade" id="modalReceive" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-truck-loading me-2"></i>รับสินค้าเข้า – บันทึกต้นทุน</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="rc-po-id">
+        <div class="alert alert-info mb-3">อ้างอิง PO: <strong id="rc-po-ref">-</strong></div>
+        <div class="row g-3">
+          <div class="col-12">
+            <div class="cost-row mb-2"><span class="fw-semibold">ต้นทุนฐาน (สินค้า + Freight)</span><span class="fw-bold" id="rc-base-thb">฿0.00</span></div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">ภาษีนำเข้า (฿)</label>
+            <input type="number" class="form-control" id="rc-customs_duty" value="0" min="0">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">ค่าเคลียร์ริ่ง (฿)</label>
+            <input type="number" class="form-control" id="rc-clearance_fee" value="0" min="0">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">ค่าขนส่ง (฿)</label>
+            <input type="number" class="form-control" id="rc-transport_fee" value="0" min="0">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">ค่าโกดัง (฿)</label>
+            <input type="number" class="form-control" id="rc-warehouse_fee" value="0" min="0">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">ค่า VAT (฿)</label>
+            <input type="number" class="form-control" id="rc-vat" value="0" min="0">
+          </div>
+        </div>
+        <div class="cost-summary mt-4">
+          <div class="cost-row"><span>ค่าใช้จ่ายเพิ่มเติมรวม</span><span id="rc-add-cost">฿0.00</span></div>
+          <div class="cost-row total"><span>ต้นทุนรวมทั้งหมด</span><span id="rc-total-cost">฿0.00</span></div>
+        </div>
+        <div class="alert alert-success mt-3">
+          <i class="fas fa-info-circle me-2"></i>เมื่อยืนยัน ระบบจะอัพเดทสต็อคสินค้าอัตโนมัติ
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-success" id="btn-confirm-receive" onclick="confirmReceived()">
+          <i class="fas fa-check me-1"></i>ยืนยันรับสินค้า
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/config.js"></script>
