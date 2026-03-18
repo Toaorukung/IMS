@@ -553,7 +553,7 @@ async function loadStock() {
 
 function renderStockTable(data) {
   if (!data.length) {
-    $('#stock-table-body').html('<tr><td colspan="7" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>');
+    $('#stock-table-body').html('<tr><td colspan="8" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>');
     return;
   }
   $('#stock-table-body').html(data.map(s => {
@@ -561,6 +561,11 @@ function renderStockTable(data) {
     const minQty = parseFloat(s.min_stock || 0);
     const val    = qty * parseFloat(s.cost_price || 0);
     const isLow  = minQty > 0 && qty <= minQty;
+    const orderBtn = isLow
+      ? `<button class="btn btn-sm btn-warning" title="สั่งซื้อสินค้าเพิ่ม"
+           onclick="window.location.href='/dashboard/purchase/?new=1&product=${encodeURIComponent(s.product_id)}'">
+           <i class="fas fa-shopping-cart me-1"></i>สั่งซื้อ</button>`
+      : '';
     return `<tr ${isLow ? 'class="table-warning"' : ''}>
       <td><span class="fw-semibold">${s.product_code || '-'}</span></td>
       <td>${s.product_name || s.product_id}</td>
@@ -569,6 +574,7 @@ function renderStockTable(data) {
       <td class="text-end">${Fmt.currency(s.cost_price)}</td>
       <td class="text-end fw-semibold">${Fmt.currency(val)}</td>
       <td>${isLow ? '<span class="badge bg-danger">สต็อคต่ำ</span>' : '<span class="badge bg-success">ปกติ</span>'}</td>
+      <td>${orderBtn}</td>
     </tr>`;
   }).join(''));
 }
@@ -1016,6 +1022,71 @@ async function generateReport() {
     $('#rpt-stat-withdrawals').text(d.withdrawals.length);
     $('#rpt-stat-stock-value').text(Fmt.currency(d.totals.total_stock_value));
 
+    // Profit calculation
+    // สร้าง map product_id → selling_price จาก App.products
+    const priceMap = {};
+    App.products.forEach(p => { priceMap[p.id] = { selling: parseFloat(p.selling_price || 0), name: p.name }; });
+
+    // รวมยอดกำไรต่อสินค้า
+    const profitByProduct = {};
+    d.withdrawals.forEach(w => {
+      const items = Array.isArray(w.items) ? w.items : [];
+      items.forEach(item => {
+        const qty      = parseFloat(item.quantity || 0);
+        const cost     = parseFloat(item.unit_price || 0);   // ต้นทุนที่บันทึกตอนเบิก
+        const selling  = (priceMap[item.product_id] || {}).selling || cost;
+        const name     = item.product_name || (priceMap[item.product_id] || {}).name || item.product_id;
+        const revenue  = selling * qty;
+        const cogs     = cost * qty;
+        const profit   = revenue - cogs;
+        if (!profitByProduct[item.product_id]) {
+          profitByProduct[item.product_id] = { name, qty: 0, revenue: 0, cogs: 0, profit: 0, cost, selling };
+        }
+        profitByProduct[item.product_id].qty     += qty;
+        profitByProduct[item.product_id].revenue += revenue;
+        profitByProduct[item.product_id].cogs    += cogs;
+        profitByProduct[item.product_id].profit  += profit;
+      });
+    });
+
+    const profitRows = Object.values(profitByProduct);
+    const totalRevenue = profitRows.reduce((s, r) => s + r.revenue, 0);
+    const totalCOGS    = profitRows.reduce((s, r) => s + r.cogs, 0);
+    const totalProfit  = totalRevenue - totalCOGS;
+    const margin       = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
+
+    $('#rpt-stat-revenue').text(Fmt.currency(totalRevenue));
+    $('#rpt-stat-cogs').text(Fmt.currency(totalCOGS));
+    const profitColor = totalProfit >= 0 ? 'text-success' : 'text-danger';
+    $('#rpt-stat-profit').html(`<span class="${profitColor}">${Fmt.currency(totalProfit)}</span>`);
+    $('#rpt-stat-margin').html(`<span class="${profitColor}">${margin.toFixed(1)}%</span>`);
+
+    // Profit table
+    if (profitRows.length) {
+      $('#rpt-profit-body').html(profitRows.map(r => {
+        const m = r.revenue > 0 ? (r.profit / r.revenue * 100) : 0;
+        const cls = r.profit >= 0 ? 'text-success' : 'text-danger';
+        return `<tr>
+          <td>${r.name}</td>
+          <td class="text-center">${Fmt.number(r.qty)}</td>
+          <td class="text-end">${Fmt.currency(r.cost)}</td>
+          <td class="text-end">${Fmt.currency(r.selling)}</td>
+          <td class="text-end">${Fmt.currency(r.revenue)}</td>
+          <td class="text-end">${Fmt.currency(r.cogs)}</td>
+          <td class="text-end fw-bold ${cls}">${Fmt.currency(r.profit)}</td>
+          <td class="text-end ${cls}">${m.toFixed(1)}%</td>
+        </tr>`;
+      }).join('') + `<tr class="table-light fw-bold">
+        <td colspan="4">รวมทั้งหมด</td>
+        <td class="text-end">${Fmt.currency(totalRevenue)}</td>
+        <td class="text-end">${Fmt.currency(totalCOGS)}</td>
+        <td class="text-end ${profitColor}">${Fmt.currency(totalProfit)}</td>
+        <td class="text-end ${profitColor}">${margin.toFixed(1)}%</td>
+      </tr>`);
+    } else {
+      $('#rpt-profit-body').html('<tr><td colspan="8" class="text-center text-muted">ไม่มีข้อมูลการเบิกในเดือนนี้</td></tr>');
+    }
+
     // Import table
     if (d.imports.length) {
       $('#rpt-imports-body').html(d.imports.map(r => `<tr>
@@ -1070,6 +1141,10 @@ function exportToExcel() {
   csv += `ต้นทุนนำเข้ารวม,${d.totals.total_import_cost}\n`;
   csv += `มูลค่าเบิกจ่ายรวม,${d.totals.total_withdrawal_value}\n`;
   csv += `มูลค่าสต็อคปัจจุบัน,${d.totals.total_stock_value}\n`;
+  csv += `รายได้รวม (ราคาขาย),${$('#rpt-stat-revenue').text()}\n`;
+  csv += `ต้นทุนสินค้าที่เบิก,${$('#rpt-stat-cogs').text()}\n`;
+  csv += `กำไรขั้นต้น,${$('#rpt-stat-profit').text()}\n`;
+  csv += `Gross Margin,${$('#rpt-stat-margin').text()}\n`;
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
@@ -1165,17 +1240,18 @@ async function deleteProductConfirm(id) {
 // เมื่อจะ deploy เวอร์ชั่นใหม่ ให้อัพเดทค่า "v" ใน /version.json
 // ============================================================
 (function () {
-  let _etag  = null;
+  let _currentVersion = null;
   let _timer = null;
 
   async function checkForUpdate() {
     try {
-      const res = await fetch('/version.json', { method: 'HEAD', cache: 'no-store' });
+      const res = await fetch('/version.json?_=' + Date.now(), { cache: 'no-store' });
       if (!res.ok) return;
-      const tag = res.headers.get('etag') || res.headers.get('last-modified');
-      if (!tag) return;
-      if (_etag === null) { _etag = tag; return; }   // ครั้งแรก เก็บ baseline
-      if (tag !== _etag) {
+      const data = await res.json();
+      const v = data && data.v;
+      if (!v) return;
+      if (_currentVersion === null) { _currentVersion = v; return; }  // เก็บ baseline
+      if (v !== _currentVersion) {
         clearInterval(_timer);
         showToast('มีเวอร์ชั่นใหม่ กำลังรีโหลดหน้าเว็บ...', 'info');
         setTimeout(() => window.location.reload(), 3000);

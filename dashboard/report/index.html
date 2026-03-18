@@ -73,6 +73,13 @@
       <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon green"><i class="fas fa-file-export"></i></div><div class="stat-value" id="rpt-stat-withdrawals">-</div><div class="stat-label">ใบเบิกที่เสร็จสิ้น</div></div></div>
       <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon teal"><i class="fas fa-wallet"></i></div><div class="stat-value small" id="rpt-stat-stock-value">-</div><div class="stat-label">มูลค่าสต็อคปัจจุบัน</div></div></div>
     </div>
+    <!-- Profit summary row -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon blue"><i class="fas fa-tags"></i></div><div class="stat-value small" id="rpt-stat-revenue">-</div><div class="stat-label">รายได้จากเบิก (ราคาขาย)</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon red"><i class="fas fa-box-open"></i></div><div class="stat-value small" id="rpt-stat-cogs">-</div><div class="stat-label">ต้นทุนสินค้าที่เบิก</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon green"><i class="fas fa-chart-line"></i></div><div class="stat-value small" id="rpt-stat-profit">-</div><div class="stat-label">กำไรขั้นต้น</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon teal"><i class="fas fa-percentage"></i></div><div class="stat-value" id="rpt-stat-margin">-</div><div class="stat-label">Gross Margin</div></div></div>
+    </div>
     <div class="panel mb-4">
       <div class="panel-header"><div class="panel-title"><i class="fas fa-ship me-2"></i>รายการสั่งซื้อ/นำเข้า</div></div>
       <div class="table-responsive">
@@ -82,12 +89,21 @@
         </table>
       </div>
     </div>
-    <div class="panel">
+    <div class="panel mb-4">
       <div class="panel-header"><div class="panel-title"><i class="fas fa-file-export me-2"></i>รายการเบิกจ่าย (เสร็จสิ้น)</div></div>
       <div class="table-responsive">
         <table class="table">
           <thead><tr><th>รหัส</th><th>วันที่</th><th>ผู้รับ</th><th>แผนก</th><th class="text-end">มูลค่า</th><th>สถานะ</th></tr></thead>
           <tbody id="rpt-wd-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title"><i class="fas fa-chart-line me-2 text-success"></i>กำไรรายสินค้า</div></div>
+      <div class="table-responsive">
+        <table class="table">
+          <thead><tr><th>ชื่อสินค้า</th><th class="text-center">จำนวนเบิก</th><th class="text-end">ต้นทุน/ชิ้น</th><th class="text-end">ราคาขาย/ชิ้น</th><th class="text-end">รายได้</th><th class="text-end">ต้นทุน</th><th class="text-end fw-bold">กำไร</th><th class="text-end">Margin</th></tr></thead>
+          <tbody id="rpt-profit-body"></tbody>
         </table>
       </div>
     </div>
