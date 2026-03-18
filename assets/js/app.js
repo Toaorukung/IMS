@@ -405,7 +405,7 @@ async function savePurchaseOrder() {
     const res = await API.addImport(payload);
     if (res.success) {
       showToast('บันทึกรายการสั่งซื้อสำเร็จ!', 'success');
-      bootstrap.Modal.getInstance('#modalPurchase').hide();
+      bootstrap.Modal.getOrCreateInstance('#modalPurchase').hide();
       loadPurchase();
     } else throw new Error(res.message);
   } catch (e) {
@@ -486,7 +486,7 @@ async function confirmReceived() {
     const res = await API.updateImportStatus(id, 'received', import_costs);
     if (res.success) {
       showToast('รับสินค้าและอัพเดทสต็อคสำเร็จ!', 'success');
-      bootstrap.Modal.getInstance('#modalReceive').hide();
+      bootstrap.Modal.getOrCreateInstance('#modalReceive').hide();
       loadPurchase();
       // Refresh stock
       const sr = await API.getStock();
@@ -741,7 +741,7 @@ async function saveWithdrawal() {
     const res = await API.addWithdrawal(payload);
     if (res.success) {
       showToast('บันทึกใบเบิกสำเร็จ!', 'success');
-      bootstrap.Modal.getInstance('#modalWithdrawal').hide();
+      bootstrap.Modal.getOrCreateInstance('#modalWithdrawal').hide();
       loadWithdrawal();
       const sr = await API.getStock(); if (sr.success) App.stock = sr.data || [];
     } else throw new Error(res.message);
@@ -832,7 +832,7 @@ async function submitReturn() {
     const res = await API.partialReturn({ id, return_items: returnItems });
     if (res.success) {
       showToast('คืนสินค้าสำเร็จ! สต็อคถูกอัพเดทแล้ว', 'success');
-      bootstrap.Modal.getInstance('#modalReturn').hide();
+      bootstrap.Modal.getOrCreateInstance('#modalReturn').hide();
       loadWithdrawal();
       const sr = await API.getStock(); if (sr.success) App.stock = sr.data || [];
     } else throw new Error(res.message);
@@ -976,7 +976,7 @@ async function saveRecipient() {
     const res = App.editingId ? await API.updateRecipient(data) : await API.addRecipient(data);
     if (res.success) {
       showToast(App.editingId ? 'อัพเดทสำเร็จ!' : 'เพิ่มผู้รับสำเร็จ!', 'success');
-      bootstrap.Modal.getInstance('#modalRecipient').hide();
+      bootstrap.Modal.getOrCreateInstance('#modalRecipient').hide();
       loadRecipients();
     } else throw new Error(res.message);
   } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
@@ -1218,7 +1218,7 @@ async function saveProduct() {
     const res = App.editingId ? await API.updateProduct(data) : await API.addProduct(data);
     if (res.success) {
       showToast(App.editingId ? 'อัพเดทสำเร็จ!' : 'เพิ่มสินค้าสำเร็จ!', 'success');
-      bootstrap.Modal.getInstance('#modalProduct').hide();
+      bootstrap.Modal.getOrCreateInstance('#modalProduct').hide();
       loadProducts();
     } else throw new Error(res.message);
   } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
