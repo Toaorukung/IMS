@@ -1143,3 +1143,30 @@ async function deleteProductConfirm(id) {
     } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
   });
 }
+
+// ============================================================
+// VERSION POLLER – ตรวจสอบเวอร์ชั่นใหม่ทุก 2 นาที
+// เมื่อจะ deploy เวอร์ชั่นใหม่ ให้อัพเดทค่า "v" ใน /version.json
+// ============================================================
+(function () {
+  let _etag  = null;
+  let _timer = null;
+
+  async function checkForUpdate() {
+    try {
+      const res = await fetch('/version.json', { method: 'HEAD', cache: 'no-store' });
+      if (!res.ok) return;
+      const tag = res.headers.get('etag') || res.headers.get('last-modified');
+      if (!tag) return;
+      if (_etag === null) { _etag = tag; return; }   // ครั้งแรก เก็บ baseline
+      if (tag !== _etag) {
+        clearInterval(_timer);
+        showToast('มีเวอร์ชั่นใหม่ กำลังรีโหลดหน้าเว็บ...', 'info');
+        setTimeout(() => window.location.reload(), 3000);
+      }
+    } catch (_) { /* network error – ข้ามไป */ }
+  }
+
+  _timer = setInterval(checkForUpdate, 120_000); // poll ทุก 2 นาที
+  checkForUpdate();                               // เก็บ baseline ทันที
+})();
