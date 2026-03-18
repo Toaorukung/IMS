@@ -17,30 +17,30 @@
   <div id="topbar">
     <div class="d-flex align-items-center gap-3">
       <button id="sidebar-toggle" class="btn btn-sm btn-outline-secondary d-lg-none"><i class="fas fa-bars"></i></button>
-      <div class="topbar-title" id="topbar-title">เบิกสินค้า</div>
+      <div class="topbar-title" id="topbar-title" data-i18n="page_withdrawal">เบิกสินค้า</div>
     </div>
     <div class="topbar-actions">
       <a href="/dashboard/home/" class="btn btn-sm btn-outline-secondary" title="หน้าหลัก"><i class="fas fa-home"></i></a>
-      <button id="btn-logout" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt me-1"></i>ออกจากระบบ</button>
+      <button id="btn-logout" class="btn btn-sm btn-outline-danger" data-i18n="btn_logout"><i class="fas fa-sign-out-alt me-1"></i>ออกจากระบบ</button>
     </div>
   </div>
 
   <div class="page-body">
   <div class="section-header mb-3">
-    <div class="section-header-title"><i class="fas fa-file-export me-2 text-primary"></i>เบิกสินค้า</div>
-    <button class="btn btn-primary" onclick="openWithdrawalModal()"><i class="fas fa-plus me-1"></i>สร้างใบเบิก</button>
+    <div class="section-header-title"><i class="fas fa-file-export me-2 text-primary"></i><span data-i18n="page_withdrawal">เบิกสินค้า</span></div>
+    <button class="btn btn-primary" data-i18n="btn_new_wd" onclick="openWithdrawalModal()"><i class="fas fa-plus me-1"></i>สร้างใบเบิก</button>
   </div>
   <div class="filter-tabs">
-    <div class="filter-tab active wd-filter" data-filter="all">ทั้งหมด</div>
-    <div class="filter-tab wd-filter" data-filter="pending">รอดำเนินการ</div>
-    <div class="filter-tab wd-filter" data-filter="completed">เสร็จสิ้น</div>
-    <div class="filter-tab wd-filter" data-filter="partial_returned">คืนบางส่วน</div>
-    <div class="filter-tab wd-filter" data-filter="returned">คืนแล้ว</div>
+    <div class="filter-tab active wd-filter" data-filter="all" data-i18n="filter_all">ทั้งหมด</div>
+    <div class="filter-tab wd-filter" data-filter="pending" data-i18n="filter_pending">รอดำเนินการ</div>
+    <div class="filter-tab wd-filter" data-filter="completed" data-i18n="filter_completed">เสร็จสิ้น</div>
+    <div class="filter-tab wd-filter" data-filter="partial_returned" data-i18n="filter_partial_returned">คืนบางส่วน</div>
+    <div class="filter-tab wd-filter" data-filter="returned" data-i18n="filter_returned">คืนแล้ว</div>
   </div>
   <div class="panel">
     <div class="table-responsive">
       <table class="table">
-        <thead><tr><th>รหัส</th><th>วันที่</th><th>ผู้รับ</th><th>แผนก</th><th class="text-center">รายการ</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+        <thead><tr><th data-i18n="th_id">รหัส</th><th data-i18n="th_date">วันที่</th><th data-i18n="th_recipient">ผู้รับ</th><th data-i18n="th_dept">แผนก</th><th class="text-center" data-i18n="th_items">รายการ</th><th data-i18n="th_status">สถานะ</th><th data-i18n="th_manage">จัดการ</th></tr></thead>
         <tbody id="wd-table-body">
           <tr><td colspan="7" class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>
         </tbody>
@@ -59,7 +59,7 @@
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="fas fa-file-export me-2"></i>สร้างใบเบิกสินค้า</h5>
+        <h5 class="modal-title" data-i18n="modal_wd_title"><i class="fas fa-file-export me-2"></i>สร้างใบเบิกสินค้า</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -102,8 +102,8 @@
         </form>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
-        <button type="button" class="btn btn-primary" id="btn-save-wd" onclick="saveWithdrawal()"><i class="fas fa-save me-1"></i>บันทึก</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="btn_cancel">ยกเลิก</button>
+        <button type="button" class="btn btn-primary" id="btn-save-wd" data-i18n="btn_save" onclick="saveWithdrawal()"><i class="fas fa-save me-1"></i>บันทึก</button>
       </div>
     </div>
   </div>
@@ -114,7 +114,7 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="fas fa-undo me-2"></i>คืนสินค้า</h5>
+        <h5 class="modal-title" data-i18n="modal_return_title"><i class="fas fa-undo me-2"></i>คืนสินค้า</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -130,9 +130,9 @@
         <div id="return-items-container"></div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="btn_cancel">ยกเลิก</button>
         <button type="button" class="btn btn-warning" id="btn-submit-return" onclick="submitReturn()">
-          <i class="fas fa-undo me-1"></i>ยืนยันคืนสินค้า
+          <i class="fas fa-undo me-1"></i><span data-i18n="btn_confirm_return">ยืนยันคืนสินค้า</span>
         </button>
       </div>
     </div>
@@ -144,13 +144,13 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="fas fa-file-invoice me-2"></i>รายละเอียดใบเบิก</h5>
+        <h5 class="modal-title" data-i18n="modal_view_wd_title"><i class="fas fa-file-invoice me-2"></i>รายละเอียดใบเบิก</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body" id="view-wd-body"></div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" id="btn-print-receipt"><i class="fas fa-print me-1"></i>พิมพ์ใบเบิก</button>
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
+        <button type="button" class="btn btn-outline-secondary" id="btn-print-receipt"><i class="fas fa-print me-1"></i><span data-i18n="btn_print">พิมพ์ใบเบิก</span></button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="btn_close">ปิด</button>
       </div>
     </div>
   </div>
@@ -159,6 +159,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/i18n.js"></script>
 <script src="../../assets/js/api.js"></script>
 <script src="../../assets/js/layout.js"></script>
 <script src="../../assets/js/app.js"></script>

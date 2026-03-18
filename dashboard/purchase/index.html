@@ -17,28 +17,28 @@
   <div id="topbar">
     <div class="d-flex align-items-center gap-3">
       <button id="sidebar-toggle" class="btn btn-sm btn-outline-secondary d-lg-none"><i class="fas fa-bars"></i></button>
-      <div class="topbar-title" id="topbar-title">สั่งซื้อสินค้า</div>
+      <div class="topbar-title" id="topbar-title" data-i18n="page_purchase">สั่งซื้อสินค้า</div>
     </div>
     <div class="topbar-actions">
       <a href="/dashboard/home/" class="btn btn-sm btn-outline-secondary" title="หน้าหลัก"><i class="fas fa-home"></i></a>
-      <button id="btn-logout" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt me-1"></i>ออกจากระบบ</button>
+      <button id="btn-logout" class="btn btn-sm btn-outline-danger" data-i18n="btn_logout"><i class="fas fa-sign-out-alt me-1"></i>ออกจากระบบ</button>
     </div>
   </div>
 
   <div class="page-body">
   <div class="section-header mb-3">
-    <button class="btn btn-primary" onclick="openPurchaseModal()"><i class="fas fa-plus me-1"></i>สร้างรายการสั่งซื้อ</button>
+    <button class="btn btn-primary" data-i18n="btn_new_po" onclick="openPurchaseModal()"><i class="fas fa-plus me-1"></i>สร้างรายการสั่งซื้อ</button>
   </div>
   <div class="filter-tabs">
-    <div class="filter-tab active purchase-filter" data-filter="all">ทั้งหมด</div>
-    <div class="filter-tab purchase-filter" data-filter="pending">รอดำเนินการ</div>
-    <div class="filter-tab purchase-filter" data-filter="in-transit">กำลังขนส่ง</div>
-    <div class="filter-tab purchase-filter" data-filter="received">รับแล้ว</div>
+    <div class="filter-tab active purchase-filter" data-filter="all" data-i18n="filter_all">ทั้งหมด</div>
+    <div class="filter-tab purchase-filter" data-filter="pending" data-i18n="filter_pending">รอดำเนินการ</div>
+    <div class="filter-tab purchase-filter" data-filter="in-transit" data-i18n="filter_in_transit">กำลังขนส่ง</div>
+    <div class="filter-tab purchase-filter" data-filter="received" data-i18n="filter_received">รับแล้ว</div>
   </div>
   <div class="panel">
     <div class="table-responsive">
       <table class="table">
-        <thead><tr><th>รหัส</th><th>วันที่</th><th>ซัพพลายเออร์</th><th class="text-center">รายการ</th><th class="text-end">ราคาหยวน</th><th class="text-end">ต้นทุนรวม</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+        <thead><tr><th data-i18n="th_id">รหัส</th><th data-i18n="th_date">วันที่</th><th data-i18n="th_supplier">ซัพพลายเออร์</th><th class="text-center" data-i18n="th_items">รายการ</th><th class="text-end" data-i18n="th_yuan_price">ราคาหยวน</th><th class="text-end" data-i18n="th_total_cost">ต้นทุนรวม</th><th data-i18n="th_status">สถานะ</th><th data-i18n="th_manage">จัดการ</th></tr></thead>
         <tbody id="purchase-table-body">
           <tr><td colspan="8" class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>
         </tbody>
@@ -56,7 +56,7 @@
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="modalPurchaseLabel"><i class="fas fa-shopping-cart me-2"></i>สร้างรายการสั่งซื้อ</h5>
+        <h5 class="modal-title" id="modalPurchaseLabel" data-i18n="modal_po_title"><i class="fas fa-shopping-cart me-2"></i>สร้างรายการสั่งซื้อ</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -115,7 +115,7 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="fas fa-eye me-2"></i>รายละเอียดการสั่งซื้อ</h5>
+        <h5 class="modal-title" data-i18n="modal_view_import_title"><i class="fas fa-eye me-2"></i>รายละเอียดการสั่งซื้อ</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body" id="view-import-body"></div>
@@ -182,8 +182,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="../../assets/js/config.js"></script>
-<script src="../../assets/js/api.js"></script>
+<script src="../../assets/js/config.js"></script>  <script src="../../assets/js/i18n.js"></script><script src="../../assets/js/api.js"></script>
 <script src="../../assets/js/layout.js"></script>
 <script src="../../assets/js/app.js"></script>
 <script>

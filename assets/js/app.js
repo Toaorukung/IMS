@@ -133,10 +133,11 @@ function confirmAction(msg, cb) {
 
 /* ===== FORMAT HELPERS ===== */
 function statusLabel(s) {
-  const m = { pending: 'รอดำเนินการ', 'in-transit': 'กำลังขนส่ง', received: 'รับแล้ว',
-              approved: 'อนุมัติ', completed: 'เสร็จสิ้น', returned: 'คืนแล้ว',
-              cancelled: 'ยกเลิก', normal: 'ปกติ', return: 'คืน' };
-  return m[s] || s;
+  const keyMap = { pending: 'status_pending', 'in-transit': 'status_in_transit', received: 'status_received',
+              approved: 'status_approved', completed: 'status_completed', returned: 'status_returned',
+              cancelled: 'status_cancelled', normal: 'status_normal_badge', return: 'status_return',
+              partial_returned: 'status_partial_returned' };
+  return typeof t === 'function' ? t(keyMap[s] || s) : s;
 }
 
 /* ===== POPULATE SELECTS ===== */
@@ -144,14 +145,16 @@ function populateProductSelects() {
   const opts = App.products.map(p =>
     `<option value="${p.id}" data-unit="${p.unit}" data-cost="${p.cost_price}" data-name="${p.name}">${p.name} (${p.code || '-'})</option>`
   ).join('');
-  $('.product-select').html('<option value="">-- เลือกสินค้า --</option>' + opts);
+  const label = typeof t === 'function' ? t('select_product') : '-- เลือกสินค้า --';
+  $('.product-select').html(`<option value="">${label}</option>` + opts);
 }
 
 function populateRecipientSelects() {
   const opts = App.recipients.map(r =>
     `<option value="${r.id}" data-dept="${r.department}" data-name="${r.name}">${r.name} – ${r.department}</option>`
   ).join('');
-  $('#wd-recipient').html('<option value="">-- เลือกผู้รับ --</option>' + opts);
+  const label = typeof t === 'function' ? t('select_recipient') : '-- เลือกผู้รับ --';
+  $('#wd-recipient').html(`<option value="">${label}</option>` + opts);
 }
 
 // ============================================================
@@ -517,7 +520,7 @@ async function loadReceive() {
           <div><span class="fw-bold">${r.id}</span> – ${r.supplier || '-'}
             <span class="ms-2">${Fmt.statusBadge(r.status)}</span>
           </div>
-          <button class="btn btn-sm btn-success" onclick="markReceived('${r.id}')"><i class="fas fa-check me-1"></i>รับสินค้าเข้า</button>
+          <button class="btn btn-sm btn-success" onclick="markReceived('${r.id}')"><i class="fas fa-check me-1"></i>${t('btn_receive')}</button>
         </div>
         <div class="panel-body">
           <div class="row g-3">
@@ -562,9 +565,9 @@ function renderStockTable(data) {
     const val    = qty * parseFloat(s.cost_price || 0);
     const isLow  = minQty > 0 && qty <= minQty;
     const orderBtn = isLow
-      ? `<button class="btn btn-sm btn-warning" title="สั่งซื้อสินค้าเพิ่ม"
+      ? `<button class="btn btn-sm btn-warning" title="${t('btn_order')}"
            onclick="window.location.href='/dashboard/purchase/?new=1&product=${encodeURIComponent(s.product_id)}'">
-           <i class="fas fa-shopping-cart me-1"></i>สั่งซื้อ</button>`
+           <i class="fas fa-shopping-cart me-1"></i>${t('btn_order')}</button>`
       : '';
     return `<tr ${isLow ? 'class="table-warning"' : ''}>
       <td><span class="fw-semibold">${s.product_code || '-'}</span></td>
@@ -573,7 +576,7 @@ function renderStockTable(data) {
       <td class="text-center">${s.unit || '-'}</td>
       <td class="text-end">${Fmt.currency(s.cost_price)}</td>
       <td class="text-end fw-semibold">${Fmt.currency(val)}</td>
-      <td>${isLow ? '<span class="badge bg-danger">สต็อคต่ำ</span>' : '<span class="badge bg-success">ปกติ</span>'}</td>
+      <td>${isLow ? `<span class="badge bg-danger">${t('status_low_badge')}</span>` : `<span class="badge bg-success">${t('status_normal_badge')}</span>`}</td>
       <td>${orderBtn}</td>
     </tr>`;
   }).join(''));

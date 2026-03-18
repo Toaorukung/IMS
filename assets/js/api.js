@@ -120,28 +120,35 @@ const Fmt = {
   date:     (s) => {
     if (!s) return '-';
     const d = new Date(s);
-    return isNaN(d) ? s : d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+    if (isNaN(d)) return s;
+    const locale = (typeof I18n !== 'undefined' && I18n.getLang() === 'en') ? 'en-GB' : 'th-TH';
+    return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
   },
   dateTime: (s) => {
     if (!s) return '-';
     const d = new Date(s);
-    return isNaN(d) ? s : d.toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    if (isNaN(d)) return s;
+    const locale = (typeof I18n !== 'undefined' && I18n.getLang() === 'en') ? 'en-GB' : 'th-TH';
+    return d.toLocaleString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   },
   statusBadge: (status) => {
     const map = {
-      pending:    '<span class="badge bg-warning text-dark">รอดำเนินการ</span>',
-      'in-transit':'<span class="badge bg-info text-dark">กำลังขนส่ง</span>',
-      received:   '<span class="badge bg-success">รับแล้ว</span>',
-      approved:   '<span class="badge bg-primary">อนุมัติแล้ว</span>',
-      completed:  '<span class="badge bg-success">เสร็จสิ้น</span>',
-      returned:         '<span class="badge bg-secondary">คืนแล้ว</span>',
-      partial_returned: '<span class="badge badge-teal">คืนบางส่วน</span>',
-      cancelled:  '<span class="badge bg-danger">ยกเลิก</span>',
-      normal:     '<span class="badge bg-primary">ปกติ</span>',
-      return:     '<span class="badge bg-warning text-dark">คืนสินค้า</span>',
-      active:     '<span class="badge bg-success">ใช้งาน</span>',
-      inactive:   '<span class="badge bg-secondary">ไม่ใช้งาน</span>'
+      pending:          { cls: 'bg-warning text-dark', key: 'status_pending' },
+      'in-transit':     { cls: 'bg-info text-dark',    key: 'status_in_transit' },
+      received:         { cls: 'bg-success',           key: 'status_received' },
+      approved:         { cls: 'bg-primary',           key: 'status_approved' },
+      completed:        { cls: 'bg-success',           key: 'status_completed' },
+      returned:         { cls: 'bg-secondary',         key: 'status_returned' },
+      partial_returned: { cls: 'badge-teal',           key: 'status_partial_returned' },
+      cancelled:        { cls: 'bg-danger',            key: 'status_cancelled' },
+      normal:           { cls: 'bg-primary',           key: 'status_normal_badge' },
+      return:           { cls: 'bg-warning text-dark', key: 'status_return' },
+      active:           { cls: 'bg-success',           key: 'status_active' },
+      inactive:         { cls: 'bg-secondary',         key: 'status_inactive' },
     };
-    return map[status] || `<span class="badge bg-secondary">${status}</span>`;
+    const entry = map[status];
+    const label = entry ? (typeof t === 'function' ? t(entry.key) : entry.key) : status;
+    const cls   = entry ? entry.cls : 'bg-secondary';
+    return `<span class="badge ${cls}">${label}</span>`;
   }
 };

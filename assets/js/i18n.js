@@ -1,0 +1,464 @@
+// ============================================================
+// i18n.js – Internationalization  (ภาษาไทย / English)
+// ============================================================
+const I18n = (() => {
+  const STORAGE_KEY = 'ims_lang';
+
+  const DICT = {
+    th: {
+      // Sidebar
+      sidebar_brand: 'ระบบเบิกสินค้า',
+      menu_main: 'เมนูหลัก',
+      menu_dispatch: 'การเบิกจ่าย',
+      menu_reports: 'รายงาน & ตั้งค่า',
+      nav_home: 'แดชบอร์ด',
+      nav_purchase: 'สั่งซื้อสินค้า',
+      nav_receive: 'รับสินค้า / ต้นทุน',
+      nav_stock: 'สต็อคสินค้า',
+      nav_withdrawal: 'เบิกสินค้า',
+      nav_recipients: 'ผู้รับสินค้า',
+      nav_report: 'รายงานรายเดือน',
+      nav_products: 'จัดการสินค้า',
+      // Common buttons
+      btn_logout: 'ออกจากระบบ',
+      btn_cancel: 'ยกเลิก',
+      btn_save: 'บันทึก',
+      btn_close: 'ปิด',
+      btn_view_all: 'ดูทั้งหมด',
+      btn_confirm_receive: 'ยืนยันรับสินค้า',
+      btn_confirm_return: 'ยืนยันคืนสินค้า',
+      btn_print: 'พิมพ์ใบเบิก',
+      btn_order: 'สั่งซื้อ',
+      // Table headers
+      th_id: 'รหัส',
+      th_date: 'วันที่',
+      th_name: 'ชื่อ',
+      th_dept: 'แผนก',
+      th_position: 'ตำแหน่ง',
+      th_phone: 'โทรศัพท์',
+      th_email: 'อีเมล',
+      th_manage: 'จัดการ',
+      th_status: 'สถานะ',
+      th_items: 'รายการ',
+      th_unit: 'หน่วย',
+      th_cost: 'ต้นทุน',
+      th_sell_price: 'ราคาขาย',
+      th_min_stock: 'สต็อคขั้นต่ำ',
+      th_qty: 'คงเหลือ',
+      th_total_val: 'มูลค่ารวม',
+      th_category: 'หมวดหมู่',
+      th_product_name: 'ชื่อสินค้า',
+      th_supplier: 'ซัพพลายเออร์',
+      th_yuan_price: 'ราคาหยวน',
+      th_total_cost: 'ต้นทุนรวม',
+      th_recipient: 'ผู้รับ',
+      th_withdrawer: 'ผู้เบิก',
+      th_cost_per: 'ต้นทุน/ชิ้น',
+      // Status badges
+      status_pending:          'รอดำเนินการ',
+      status_completed:        'เสร็จสิ้น',
+      status_received:         'รับแล้ว',
+      status_in_transit:       'กำลังขนส่ง',
+      status_returned:         'คืนแล้ว',
+      status_partial_returned: 'คืนบางส่วน',
+      status_return:           'คืนสินค้า',
+      status_approved:         'อนุมัติแล้ว',
+      status_cancelled:        'ยกเลิก',
+      status_normal_badge:     'ปกติ',
+      status_low_badge:        'สต็อคต่ำ',
+      status_active:           'ใช้งาน',
+      status_inactive:         'ไม่ใช้งาน',
+      // Dashboard
+      page_home: 'แดชบอร์ด',
+      stat_products: 'สินค้าทั้งหมด',
+      stat_stock: 'สต็อครวม (ชิ้น)',
+      stat_pending_imports: 'รอรับสินค้า',
+      stat_today_wd: 'เบิกวันนี้',
+      qa_title: 'ทางลัด',
+      qa_purchase: 'สั่งซื้อสินค้า',
+      qa_purchase_sub: 'สร้างใบสั่งซื้อใหม่',
+      qa_withdrawal: 'เบิกสินค้า',
+      qa_withdrawal_sub: 'ส่งคำขอเบิกใหม่',
+      qa_stock: 'ดูสต็อค',
+      qa_stock_sub: 'ตรวจสอบสินค้าคงเหลือ',
+      qa_report: 'รายงาน',
+      qa_report_sub: 'สรุปและวิเคราะห์ข้อมูล',
+      recent_wd: 'การเบิกล่าสุด',
+      stock_alert_pre: 'สินค้าใกล้หมดสต็อค:',
+      // Purchase
+      page_purchase: 'สั่งซื้อสินค้า',
+      btn_new_po: 'สร้างรายการสั่งซื้อ',
+      filter_all: 'ทั้งหมด',
+      filter_pending: 'รอดำเนินการ',
+      filter_in_transit: 'กำลังขนส่ง',
+      filter_received: 'รับแล้ว',
+      modal_po_title: 'สร้างรายการสั่งซื้อ',
+      modal_view_import_title: 'รายละเอียดการสั่งซื้อ',
+      // Receive
+      page_receive: 'รับสินค้า / คำนวณต้นทุน',
+      receive_info: 'รายการด้านล่างคือการสั่งซื้อที่ยังไม่ได้รับสินค้า คลิก <strong>รับสินค้าเข้า</strong> เพื่อบันทึกค่าใช้จ่ายและอัพเดทสต็อค',
+      modal_receive_title: 'รับสินค้าเข้า – บันทึกต้นทุน',
+      btn_receive: 'รับสินค้าเข้า',
+      // Stock
+      page_stock: 'สต็อคสินค้า',
+      stat_total_items: 'รายการสินค้าทั้งหมด',
+      stat_low_stock: 'สต็อคต่ำกว่าขั้นต่ำ',
+      stat_stock_val: 'มูลค่าสต็อคทั้งหมด',
+      stock_list_title: 'รายการสต็อค',
+      ph_search_stock: 'ค้นหาสินค้า...',
+      // Withdrawal
+      page_withdrawal: 'เบิกสินค้า',
+      btn_new_wd: 'สร้างใบเบิก',
+      filter_completed: 'เสร็จสิ้น',
+      filter_partial_returned: 'คืนบางส่วน',
+      filter_returned: 'คืนแล้ว',
+      modal_wd_title: 'สร้างใบเบิกสินค้า',
+      modal_return_title: 'คืนสินค้า',
+      modal_view_wd_title: 'รายละเอียดใบเบิก',
+      // Recipients
+      page_recipients: 'ผู้รับสินค้า',
+      btn_add_recipient: 'เพิ่มผู้รับ',
+      modal_recipient_title: 'เพิ่มผู้รับสินค้า',
+      // Products
+      page_products: 'จัดการสินค้า',
+      btn_add_product: 'เพิ่มสินค้า',
+      modal_product_title: 'เพิ่มสินค้า',
+      // Report
+      page_report: 'รายงานประจำเดือน',
+      label_month: 'เดือน',
+      label_year: 'ปี (ค.ศ.)',
+      btn_gen_report: 'สร้างรายงาน',
+      btn_export_csv: 'ส่งออก CSV/Excel',
+      rpt_stat_imports: 'รายการสั่งซื้อ',
+      rpt_stat_import_cost: 'ต้นทุนนำเข้ารวม',
+      rpt_stat_withdrawals: 'ใบเบิกที่เสร็จสิ้น',
+      rpt_stat_stock_value: 'มูลค่าสต็อคปัจจุบัน',
+      rpt_stat_revenue: 'รายได้จากเบิก (ราคาขาย)',
+      rpt_stat_cogs: 'ต้นทุนสินค้าที่เบิก',
+      rpt_stat_profit: 'กำไรขั้นต้น',
+      rpt_stat_margin: 'Gross Margin',
+      // Form labels
+      lbl_supplier: 'ซัพพลายเออร์',
+      lbl_order_date: 'วันที่สั่งซื้อ',
+      lbl_exchange_rate: 'อัตราแลกเปลี่ยน (¥→฿)',
+      lbl_freight: 'ค่า Freight (฿)',
+      lbl_items_list: 'รายการสินค้า',
+      lbl_product_code: 'รหัสสินค้า',
+      lbl_product_name_f: 'ชื่อสินค้า',
+      lbl_category: 'หมวดหมู่',
+      lbl_unit: 'หน่วย',
+      lbl_min_stock: 'สต็อคขั้นต่ำ',
+      lbl_cost_price: 'ต้นทุน/ชิ้น (฿)',
+      lbl_sell_price: 'ราคาขาย/ชิ้น (฿)',
+      lbl_notes: 'หมายเหตุ',
+      lbl_full_name: 'ชื่อ-นามสกุล',
+      lbl_department: 'แผนก',
+      lbl_position: 'ตำแหน่ง',
+      lbl_phone: 'โทรศัพท์',
+      lbl_email: 'อีเมล',
+      lbl_recipient: 'ผู้รับสินค้า',
+      lbl_wd_date: 'วันที่เบิก',
+      lbl_wd_type: 'ประเภท',
+      lbl_type_normal: 'เบิกสินค้าออก',
+      lbl_type_return: 'คืนสินค้าเข้าสต็อค',
+      lbl_total_value: 'มูลค่ารวม',
+      lbl_customs_duty: 'ภาษีนำเข้า (฿)',
+      lbl_clearance_fee: 'ค่าเคลียร์ริ่ง (฿)',
+      lbl_transport_fee: 'ค่าขนส่ง (฿)',
+      lbl_warehouse_fee: 'ค่าโกดัง (฿)',
+      lbl_vat: 'ค่า VAT (฿)',
+      lbl_base_cost: 'ต้นทุนฐาน (สินค้า + Freight)',
+      lbl_add_cost: 'ค่าใช้จ่ายเพิ่มเติมรวม',
+      lbl_total_cost: 'ต้นทุนรวมทั้งหมด',
+      // Placeholders
+      ph_notes: 'หมายเหตุ...',
+      ph_product_code: 'รหัสสินค้า',
+      ph_product_name: 'ชื่อสินค้า',
+      ph_category: 'หมวดหมู่',
+      ph_full_name: 'ชื่อ-นามสกุล',
+      ph_dept: 'แผนก',
+      ph_position: 'ตำแหน่ง',
+      ph_phone: 'เบอร์โทร',
+      ph_email: 'อีเมล',
+      ph_supplier: 'ชื่อบริษัท/ร้าน',
+      // Dynamic
+      select_product: '-- เลือกสินค้า --',
+      select_recipient: '-- เลือกผู้รับ --',
+      // Login
+      login_title: 'ระบบเบิกสินค้าและจัดการคลังสินค้า',
+      login_sub: 'กรุณาเข้าสู่ระบบเพื่อดำเนินการต่อ',
+      lbl_username: 'ชื่อผู้ใช้',
+      lbl_password: 'รหัสผ่าน',
+      btn_login: 'เข้าสู่ระบบ',
+      back_home: 'กลับหน้าหลัก',
+      test_accounts: 'บัญชีทดสอบ',
+      ph_username: 'กรอกชื่อผู้ใช้',
+      ph_password: 'กรอกรหัสผ่าน',
+      // Months
+      month_1: 'มกราคม', month_2: 'กุมภาพันธ์', month_3: 'มีนาคม',
+      month_4: 'เมษายน', month_5: 'พฤษภาคม', month_6: 'มิถุนายน',
+      month_7: 'กรกฎาคม', month_8: 'สิงหาคม', month_9: 'กันยายน',
+      month_10: 'ตุลาคม', month_11: 'พฤศจิกายน', month_12: 'ธันวาคม',
+    },
+
+    en: {
+      // Sidebar
+      sidebar_brand: 'Inventory System',
+      menu_main: 'Main Menu',
+      menu_dispatch: 'Dispatch',
+      menu_reports: 'Reports & Settings',
+      nav_home: 'Dashboard',
+      nav_purchase: 'Purchase Orders',
+      nav_receive: 'Receive / Cost',
+      nav_stock: 'Stock',
+      nav_withdrawal: 'Withdrawal',
+      nav_recipients: 'Recipients',
+      nav_report: 'Monthly Report',
+      nav_products: 'Products',
+      // Common buttons
+      btn_logout: 'Logout',
+      btn_cancel: 'Cancel',
+      btn_save: 'Save',
+      btn_close: 'Close',
+      btn_view_all: 'View All',
+      btn_confirm_receive: 'Confirm Receipt',
+      btn_confirm_return: 'Confirm Return',
+      btn_print: 'Print',
+      btn_order: 'Order',
+      // Table headers
+      th_id: 'ID',
+      th_date: 'Date',
+      th_name: 'Name',
+      th_dept: 'Department',
+      th_position: 'Position',
+      th_phone: 'Phone',
+      th_email: 'Email',
+      th_manage: 'Actions',
+      th_status: 'Status',
+      th_items: 'Items',
+      th_unit: 'Unit',
+      th_cost: 'Cost',
+      th_sell_price: 'Sell Price',
+      th_min_stock: 'Min Stock',
+      th_qty: 'In Stock',
+      th_total_val: 'Total Value',
+      th_category: 'Category',
+      th_product_name: 'Product Name',
+      th_supplier: 'Supplier',
+      th_yuan_price: 'Yuan Price',
+      th_total_cost: 'Total Cost',
+      th_recipient: 'Recipient',
+      th_withdrawer: 'Requester',
+      th_cost_per: 'Cost/Unit',
+      // Status badges
+      status_pending:          'Pending',
+      status_completed:        'Completed',
+      status_received:         'Received',
+      status_in_transit:       'In Transit',
+      status_returned:         'Returned',
+      status_partial_returned: 'Partial Return',
+      status_return:           'Return',
+      status_approved:         'Approved',
+      status_cancelled:        'Cancelled',
+      status_normal_badge:     'Normal',
+      status_low_badge:        'Low Stock',
+      status_active:           'Active',
+      status_inactive:         'Inactive',
+      // Dashboard
+      page_home: 'Dashboard',
+      stat_products: 'Total Products',
+      stat_stock: 'Total Stock (units)',
+      stat_pending_imports: 'Pending Deliveries',
+      stat_today_wd: "Today's Issues",
+      qa_title: 'Quick Actions',
+      qa_purchase: 'Purchase Order',
+      qa_purchase_sub: 'Create new PO',
+      qa_withdrawal: 'Withdrawal',
+      qa_withdrawal_sub: 'Submit new request',
+      qa_stock: 'View Stock',
+      qa_stock_sub: 'Check inventory levels',
+      qa_report: 'Reports',
+      qa_report_sub: 'Summarize & analyze',
+      recent_wd: 'Recent Withdrawals',
+      stock_alert_pre: 'Near out-of-stock items:',
+      // Purchase
+      page_purchase: 'Purchase Orders',
+      btn_new_po: 'Create Purchase Order',
+      filter_all: 'All',
+      filter_pending: 'Pending',
+      filter_in_transit: 'In Transit',
+      filter_received: 'Received',
+      modal_po_title: 'Create Purchase Order',
+      modal_view_import_title: 'Purchase Order Details',
+      // Receive
+      page_receive: 'Receive / Calculate Cost',
+      receive_info: 'Items below are orders not yet received. Click <strong>Receive Items</strong> to record costs and update stock.',
+      modal_receive_title: 'Receive Items – Record Cost',
+      btn_receive: 'Receive Items',
+      // Stock
+      page_stock: 'Stock',
+      stat_total_items: 'Total Items',
+      stat_low_stock: 'Items Below Minimum',
+      stat_stock_val: 'Total Stock Value',
+      stock_list_title: 'Stock List',
+      ph_search_stock: 'Search products...',
+      // Withdrawal
+      page_withdrawal: 'Withdrawal',
+      btn_new_wd: 'Create Withdrawal',
+      filter_completed: 'Completed',
+      filter_partial_returned: 'Partial Return',
+      filter_returned: 'Returned',
+      modal_wd_title: 'Create Withdrawal',
+      modal_return_title: 'Return Items',
+      modal_view_wd_title: 'Withdrawal Details',
+      // Recipients
+      page_recipients: 'Recipients',
+      btn_add_recipient: 'Add Recipient',
+      modal_recipient_title: 'Add Recipient',
+      // Products
+      page_products: 'Products',
+      btn_add_product: 'Add Product',
+      modal_product_title: 'Add Product',
+      // Report
+      page_report: 'Monthly Report',
+      label_month: 'Month',
+      label_year: 'Year (A.D.)',
+      btn_gen_report: 'Generate Report',
+      btn_export_csv: 'Export CSV/Excel',
+      rpt_stat_imports: 'Purchase Orders',
+      rpt_stat_import_cost: 'Total Import Cost',
+      rpt_stat_withdrawals: 'Completed Issues',
+      rpt_stat_stock_value: 'Current Stock Value',
+      rpt_stat_revenue: 'Revenue (Sell Price)',
+      rpt_stat_cogs: 'Cost of Goods Issued',
+      rpt_stat_profit: 'Gross Profit',
+      rpt_stat_margin: 'Gross Margin',
+      // Form labels
+      lbl_supplier: 'Supplier',
+      lbl_order_date: 'Order Date',
+      lbl_exchange_rate: 'Exchange Rate (¥→฿)',
+      lbl_freight: 'Freight Cost (฿)',
+      lbl_items_list: 'Product Items',
+      lbl_product_code: 'Product Code',
+      lbl_product_name_f: 'Product Name',
+      lbl_category: 'Category',
+      lbl_unit: 'Unit',
+      lbl_min_stock: 'Min Stock',
+      lbl_cost_price: 'Cost/Unit (฿)',
+      lbl_sell_price: 'Sell Price/Unit (฿)',
+      lbl_notes: 'Notes',
+      lbl_full_name: 'Full Name',
+      lbl_department: 'Department',
+      lbl_position: 'Position',
+      lbl_phone: 'Phone',
+      lbl_email: 'Email',
+      lbl_recipient: 'Recipient',
+      lbl_wd_date: 'Issue Date',
+      lbl_wd_type: 'Type',
+      lbl_type_normal: 'Issue from Stock',
+      lbl_type_return: 'Return to Stock',
+      lbl_total_value: 'Total Value',
+      lbl_customs_duty: 'Customs Duty (฿)',
+      lbl_clearance_fee: 'Clearance Fee (฿)',
+      lbl_transport_fee: 'Transport Fee (฿)',
+      lbl_warehouse_fee: 'Warehouse Fee (฿)',
+      lbl_vat: 'VAT (฿)',
+      lbl_base_cost: 'Base Cost (Goods + Freight)',
+      lbl_add_cost: 'Additional Costs Total',
+      lbl_total_cost: 'Total Cost',
+      // Placeholders
+      ph_notes: 'Notes...',
+      ph_product_code: 'Product code',
+      ph_product_name: 'Product name',
+      ph_category: 'Category',
+      ph_full_name: 'Full name',
+      ph_dept: 'Department',
+      ph_position: 'Position',
+      ph_phone: 'Phone number',
+      ph_email: 'Email',
+      ph_supplier: 'Company/store name',
+      // Dynamic
+      select_product: '-- Select Product --',
+      select_recipient: '-- Select Recipient --',
+      // Login
+      login_title: 'Inventory Management System',
+      login_sub: 'Please log in to continue',
+      lbl_username: 'Username',
+      lbl_password: 'Password',
+      btn_login: 'Log In',
+      back_home: 'Back to Home',
+      test_accounts: 'Test Accounts',
+      ph_username: 'Enter username',
+      ph_password: 'Enter password',
+      // Months
+      month_1: 'January',  month_2: 'February', month_3: 'March',
+      month_4: 'April',    month_5: 'May',       month_6: 'June',
+      month_7: 'July',     month_8: 'August',    month_9: 'September',
+      month_10: 'October', month_11: 'November', month_12: 'December',
+    }
+  };
+
+  function getLang() {
+    return localStorage.getItem(STORAGE_KEY) || 'th';
+  }
+
+  function setLang(lang) {
+    localStorage.setItem(STORAGE_KEY, lang);
+    location.reload();
+  }
+
+  function t(key) {
+    const lang = getLang();
+    const val = DICT[lang] && DICT[lang][key] !== undefined ? DICT[lang][key] : null;
+    return val !== null ? val : (DICT['th'][key] !== undefined ? DICT['th'][key] : key);
+  }
+
+  function apply() {
+    // Update <html lang>
+    document.documentElement.lang = getLang() === 'en' ? 'en' : 'th';
+
+    // data-i18n → textContent
+    // Smart: if element has child elements (icons), update text nodes only
+    document.querySelectorAll('[data-i18n]').forEach(function(el) {
+      var val = t(el.dataset.i18n);
+      if (!val || val === el.dataset.i18n) return;
+      if (el.children.length > 0) {
+        // Preserve child elements (e.g. icons), update only text nodes
+        Array.from(el.childNodes).forEach(function(node) {
+          if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+            node.textContent = val;
+          }
+        });
+      } else {
+        el.textContent = val;
+      }
+    });
+
+    // data-i18n-html → innerHTML (for keys containing HTML tags)
+    document.querySelectorAll('[data-i18n-html]').forEach(function(el) {
+      var val = t(el.dataset.i18nHtml);
+      if (val && val !== el.dataset.i18nHtml) el.innerHTML = val;
+    });
+
+    // data-i18n-placeholder → placeholder attribute
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el) {
+      var val = t(el.dataset.i18nPlaceholder);
+      if (val && val !== el.dataset.i18nPlaceholder) el.placeholder = val;
+    });
+
+    // data-i18n-title-attr → title attribute
+    document.querySelectorAll('[data-i18n-title-attr]').forEach(function(el) {
+      var val = t(el.dataset.i18nTitleAttr);
+      if (val && val !== el.dataset.i18nTitleAttr) el.title = val;
+    });
+
+    // Update lang-toggle button label
+    var btn = document.getElementById('lang-toggle');
+    if (btn) btn.textContent = getLang() === 'th' ? '🌐 EN' : '🌐 ภาษาไทย';
+  }
+
+  return { getLang, setLang, t, apply };
+})();
+
+// Global shorthand – usable across all scripts
+function t(key) { return I18n.t(key); }

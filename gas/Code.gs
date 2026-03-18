@@ -148,7 +148,14 @@ function addProduct(data) {
 function updateProduct(data) {
   const sheet = getSheet('Products');
   if (!sheet) return { success: false };
+  const rows = sheetToObjects(sheet);
+  const existing = rows.find(function(r) { return r.id === data.id; });
   const ok = updateRow(sheet, data.id, data);
+  // If cost_price changed → revalue all stock lots at the new price
+  if (ok && existing && data.cost_price !== undefined &&
+      parseFloat(data.cost_price) !== parseFloat(existing.cost_price)) {
+    revalueStock(data.id, parseFloat(data.cost_price));
+  }
   return { success: ok, message: ok ? 'อัพเดทสำเร็จ' : 'ไม่พบสินค้า' };
 }
 
@@ -159,25 +166,110 @@ function deleteProduct(data) {
   return { success: ok, message: ok ? 'ลบสำเร็จ' : 'ไม่พบสินค้า' };
 }
 
-// ---------- Stock ----------
-function getStock() {
-  const sheet = getSheet('Stock');
-  if (!sheet) return { success: false, message: 'ไม่พบชีท Stock' };
-  return { success: true, data: sheetToObjects(sheet) };
+// ---------- Stock (FIFO Lot-based) ----------
+
+// Append a new stock lot row (col layout: id, product_id, product_name, product_code, min_stock, quantity, cost_price, unit, last_updated)
+function addStockLot(productId, quantity, cost) {
+  var sheet = getSheet('Stock');
+  if (!sheet) return;
+  var prodSheet = getSheet('Products');
+  var prod = prodSheet ? sheetToObjects(prodSheet).find(function(p) { return p.id === productId; }) : null;
+  var lotId = uid('LOT');
+  sheet.appendRow([
+    lotId,
+    productId,
+    prod ? (prod.name || '') : '',
+    prod ? (prod.code || '') : '',
+    prod ? (parseFloat(prod.min_stock) || 0) : 0,
+    parseFloat(quantity) || 0,
+    parseFloat(cost) || 0,
+    prod ? (prod.unit || '') : '',
+    now()
+  ]);
 }
 
-function adjustStock(productId, delta, newCost) {
-  const sheet = getSheet('Stock');
-  if (!sheet) return;
-  const rows = sheetToObjects(sheet);
-  const idx  = rows.findIndex(r => String(r.product_id) === String(productId));
-  if (idx === -1) return;
-  const rowNo   = idx + 2;
-  const current = parseFloat(sheet.getRange(rowNo, 6).getValue()) || 0;
-  const updated = Math.max(0, current + delta);
-  sheet.getRange(rowNo, 6).setValue(updated);
-  sheet.getRange(rowNo, 9).setValue(now());
-  if (newCost !== null && newCost !== undefined) sheet.getRange(rowNo, 7).setValue(newCost);
+// FIFO deduction: deduct quantity from oldest (top) lots first
+function deductStockFIFO(productId, quantity) {
+  var sheet = getSheet('Stock');
+  if (!sheet || sheet.getLastRow() < 2) return;
+  var remaining = parseFloat(quantity);
+  var lastRow = sheet.getLastRow();
+  var allVals = sheet.getRange(2, 1, lastRow - 1, 9).getValues();
+  for (var i = 0; i < allVals.length && remaining > 0; i++) {
+    if (String(allVals[i][1]) !== String(productId)) continue; // col index 1 = product_id
+    var rowNo = i + 2;
+    var qty = parseFloat(allVals[i][5]) || 0; // col index 5 = quantity
+    if (qty <= 0) continue;
+    if (qty <= remaining) {
+      sheet.getRange(rowNo, 6).setValue(0);
+      remaining -= qty;
+    } else {
+      sheet.getRange(rowNo, 6).setValue(qty - remaining);
+      remaining = 0;
+    }
+    sheet.getRange(rowNo, 9).setValue(now());
+  }
+}
+
+// Revalue: consolidate all existing lots into one new lot at new cost (triggered by cost_price edit)
+function revalueStock(productId, newCost) {
+  var sheet = getSheet('Stock');
+  if (!sheet || sheet.getLastRow() < 2) {
+    addStockLot(productId, 0, newCost);
+    return;
+  }
+  var lastRow = sheet.getLastRow();
+  var allVals = sheet.getRange(2, 1, lastRow - 1, 9).getValues();
+  var totalQty = 0;
+  for (var i = 0; i < allVals.length; i++) {
+    if (String(allVals[i][1]) !== String(productId)) continue;
+    var qty = parseFloat(allVals[i][5]) || 0;
+    totalQty += qty;
+    if (qty > 0) {
+      sheet.getRange(i + 2, 6).setValue(0);
+      sheet.getRange(i + 2, 9).setValue(now());
+    }
+  }
+  addStockLot(productId, totalQty, newCost);
+}
+
+// getStock: aggregate all lots per product_id into one summary row (weighted avg cost)
+function getStock() {
+  var sheet = getSheet('Stock');
+  if (!sheet) return { success: false, message: 'ไม่พบชีท Stock' };
+  var rows = sheetToObjects(sheet);
+  var map = {};
+  rows.forEach(function(r) {
+    var pid = String(r.product_id);
+    var qty = parseFloat(r.quantity) || 0;
+    var cost = parseFloat(r.cost_price) || 0;
+    if (!map[pid]) {
+      map[pid] = {
+        id: r.id,
+        product_id: pid,
+        product_name: r.product_name || '',
+        product_code: r.product_code || '',
+        min_stock: r.min_stock || 0,
+        unit: r.unit || '',
+        quantity: 0,
+        cost_price: 0,
+        _total_value: 0,
+        last_updated: r.last_updated || ''
+      };
+    }
+    map[pid].quantity += qty;
+    map[pid]._total_value += qty * cost;
+    var d1 = new Date(r.last_updated || 0);
+    var d2 = new Date(map[pid].last_updated || 0);
+    if (d1 > d2) map[pid].last_updated = r.last_updated;
+  });
+  var result = Object.keys(map).map(function(pid) {
+    var p = map[pid];
+    p.cost_price = p.quantity > 0 ? p._total_value / p.quantity : 0;
+    delete p._total_value;
+    return p;
+  });
+  return { success: true, data: result };
 }
 
 // ---------- Imports (Purchase Orders) ----------
@@ -214,7 +306,7 @@ function addImport(data) {
     data.status || 'pending', data.notes || '', now(), data.created_by || '']);
 
   if (data.status === 'received') {
-    items.forEach(item => adjustStock(item.product_id, parseFloat(item.quantity), parseFloat(item.unit_cost)));
+    items.forEach(function(item) { addStockLot(item.product_id, parseFloat(item.quantity), parseFloat(item.unit_cost)); });
   }
   return { success: true, id, total_cost: total, message: 'บันทึกการสั่งซื้อสำเร็จ' };
 }
@@ -231,7 +323,7 @@ function updateImportStatus(data) {
   if (data.status === 'received') {
     let items = [];
     try { items = JSON.parse(record.items); } catch (_) {}
-    items.forEach(item => adjustStock(item.product_id, parseFloat(item.quantity), parseFloat(item.unit_cost)));
+    items.forEach(function(item) { addStockLot(item.product_id, parseFloat(item.quantity), parseFloat(item.unit_cost)); });
   }
   return { success: true, message: 'อัพเดทสถานะสำเร็จ' };
 }
@@ -260,8 +352,11 @@ function addWithdrawal(data) {
     data.status || 'pending', data.created_by || '', now()]);
 
   if (data.status === 'completed') {
-    const sign = data.type === 'return' ? 1 : -1;
-    items.forEach(i => adjustStock(i.product_id, sign * parseFloat(i.quantity), null));
+    if (data.type === 'return') {
+      items.forEach(function(i) { addStockLot(i.product_id, parseFloat(i.quantity), parseFloat(i.unit_price) || 0); });
+    } else {
+      items.forEach(function(i) { deductStockFIFO(i.product_id, parseFloat(i.quantity)); });
+    }
   }
   return { success: true, id, message: 'บันทึกใบเบิกสำเร็จ' };
 }
@@ -280,9 +375,17 @@ function updateWithdrawalStatus(data) {
 
   const isNormal = record.type === 'normal';
   if (data.status === 'completed' && oldStatus !== 'completed') {
-    items.forEach(i => adjustStock(i.product_id, isNormal ? -parseFloat(i.quantity) : parseFloat(i.quantity), null));
+    if (isNormal) {
+      items.forEach(function(i) { deductStockFIFO(i.product_id, parseFloat(i.quantity)); });
+    } else {
+      items.forEach(function(i) { addStockLot(i.product_id, parseFloat(i.quantity), 0); });
+    }
   } else if (data.status === 'returned' && oldStatus === 'completed') {
-    items.forEach(i => adjustStock(i.product_id, isNormal ? parseFloat(i.quantity) : -parseFloat(i.quantity), null));
+    if (isNormal) {
+      items.forEach(function(i) { addStockLot(i.product_id, parseFloat(i.quantity), 0); });
+    } else {
+      items.forEach(function(i) { deductStockFIFO(i.product_id, parseFloat(i.quantity)); });
+    }
   }
   return { success: true, message: 'อัพเดทสถานะสำเร็จ' };
 }
@@ -305,8 +408,12 @@ function partialReturn(data) {
 
   const isNormal = record.type === 'normal';
   returnItems.forEach(function(item) {
-    // คืนสต็อค
-    adjustStock(item.product_id, isNormal ? parseFloat(item.quantity) : -parseFloat(item.quantity), null);
+    // คืนสต็อค (FIFO: คืนของเพิ่ม lot ใหม่ 0-cost; หักของใช้ FIFO)
+    if (isNormal) {
+      addStockLot(item.product_id, parseFloat(item.quantity), 0);
+    } else {
+      deductStockFIFO(item.product_id, parseFloat(item.quantity));
+    }
     // ลดจำนวนในใบเบิก
     var ci = currentItems.find(function(i) { return i.product_id === item.product_id; });
     if (ci) {
@@ -354,9 +461,19 @@ function getDashboardStats() {
   const stockSheet = getSheet('Stock');
   if (stockSheet) {
     const rows = sheetToObjects(stockSheet);
-    stats.total_products    = rows.length;
-    stats.low_stock_items   = rows.filter(r => parseFloat(r.quantity) <= parseFloat(r.min_stock)).length;
-    stats.total_stock_value = rows.reduce((s, r) => s + parseFloat(r.quantity) * parseFloat(r.cost_price), 0);
+    // Aggregate lots per product_id
+    const stockMap = {};
+    rows.forEach(function(r) {
+      const pid = String(r.product_id);
+      const qty = parseFloat(r.quantity) || 0;
+      if (!stockMap[pid]) stockMap[pid] = { quantity: 0, min_stock: parseFloat(r.min_stock) || 0, total_value: 0 };
+      stockMap[pid].quantity  += qty;
+      stockMap[pid].total_value += qty * (parseFloat(r.cost_price) || 0);
+    });
+    const aggregated = Object.values(stockMap);
+    stats.total_products    = aggregated.length;
+    stats.low_stock_items   = aggregated.filter(function(p) { return p.min_stock > 0 && p.quantity <= p.min_stock; }).length;
+    stats.total_stock_value = aggregated.reduce(function(s, p) { return s + p.total_value; }, 0);
   }
 
   const wSheet = getSheet('Withdrawals');
