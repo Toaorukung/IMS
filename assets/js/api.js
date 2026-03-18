@@ -105,7 +105,10 @@ const Auth = (() => {
     },
 
     /** true เฉพาะเมื่อ server ยืนยันว่าเป็น admin */
-    isAdmin: () => _verifiedRole === 'admin'
+    isAdmin: () => _verifiedRole === 'admin',
+
+    /** ตั้งค่า role จาก cache (ใช้สำหรับ render UI ทันที ก่อน server ยืนยัน) */
+    setCachedRole: (role) => { _verifiedRole = role; }
   };
 })();
 

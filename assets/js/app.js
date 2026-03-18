@@ -17,25 +17,21 @@ const App = {
 /* ===== INIT ===== */
 $(document).ready(async function () {
   const page = document.body.dataset.page || 'home';
-
-  // 1. ตรวจสอบ token กับ server ทุกครั้ง (ไม่เชื่อ role ใน sessionStorage)
-  const check = await Auth.verifyAccess();
-  if (!check.ok) { window.location.replace('/login/'); return; }
-
-  App.user = check.user;
-
-  // 2. ถ้าไม่ใช่ admin → อนุญาตเฉพาะหน้าเบิกสินค้าเท่านั้น
-  //    การตรวจสอบอ้างอิง Auth.isAdmin() ซึ่งอ่านจาก closure ที่ไม่สามารถแก้ได้จากภายนอก
   const STAFF_ALLOWED_PAGES = ['withdrawal'];
-  if (!Auth.isAdmin() && !STAFF_ALLOWED_PAGES.includes(page)) {
-    window.location.replace('/dashboard/withdrawal/');
-    return;
-  }
 
-  // 3. Render sidebar (menu จะแสดงตาม role ที่ server ยืนยัน)
+  // 1. ถ้าไม่มี token เลย → ไป login ทันที (ไม่รอ server)
+  if (!Auth.isLoggedIn()) { window.location.replace('/login/'); return; }
+
+  // 2. โหลด user จาก cache เพื่อ render sidebar ทันที (ไม่รอ server)
+  const cachedUser = Auth.getUser();
+  if (!cachedUser) { window.location.replace('/login/'); return; }
+
+  // ตั้ง role จาก cache เพื่อให้ initLayout ใช้ได้ทันที
+  Auth.setCachedRole(cachedUser.role);
+  App.user = cachedUser;
+
+  // 3. Render sidebar และ UI ทันทีจาก cache (ไม่มี flash)
   if (typeof initLayout === 'function') initLayout(page);
-
-  // 4. แสดงข้อมูล user
   $('#user-name').text(App.user.name || App.user.username);
   $('#user-role').text(Auth.isAdmin() ? 'ผู้ดูแลระบบ' : 'พนักงาน');
 
@@ -44,6 +40,26 @@ $(document).ready(async function () {
     Auth.clear();
     window.location.replace('/login/');
   });
+
+  // 4. Verify กับ server ใน background (security check)
+  //    ถ้า token หมดอายุ / ถูกลบ / role เปลี่ยน → redirect
+  Auth.verifyAccess().then(check => {
+    if (!check.ok) { window.location.replace('/login/'); return; }
+    // อัพเดท user จาก server (เผื่อ role หรือชื่อเปลี่ยน)
+    App.user = check.user;
+    $('#user-name').text(App.user.name || App.user.username);
+    $('#user-role').text(Auth.isAdmin() ? 'ผู้ดูแลระบบ' : 'พนักงาน');
+    // ตรวจ page permission หลัง server ยืนยัน role จริง
+    if (!Auth.isAdmin() && !STAFF_ALLOWED_PAGES.includes(page)) {
+      window.location.replace('/dashboard/withdrawal/');
+    }
+  });
+
+  // 5. ตรวจ page permission จาก cache ก่อน (กัน flash ของ content)
+  if (!Auth.isAdmin() && !STAFF_ALLOWED_PAGES.includes(page)) {
+    window.location.replace('/dashboard/withdrawal/');
+    return;
+  }
 
   // Prefetch shared data
   prefetchData();

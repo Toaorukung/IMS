@@ -35,8 +35,8 @@ function initLayout(activePage) {
     <div class="sidebar-brand d-flex align-items-center gap-2">
       <div class="sidebar-brand-icon"><i class="fas fa-boxes"></i></div>
       <div>
-        <div class="sidebar-brand-text">ระบบเบิกของ</div>
-        <div class="sidebar-brand-ver">พี่วุฒิ v1.0</div>
+        <div class="sidebar-brand-text">ระบบเบิกสินค้า</div>
+        <div class="sidebar-brand-ver">v1.0.5</div>
       </div>
     </div>
     ${isAdmin ? `<div class="sidebar-section-label">เมนูหลัก</div>
