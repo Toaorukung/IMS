@@ -78,16 +78,15 @@ async function prefetchData() {
 
 /* ===== NAVIGATION ===== */
 function loadSection(name) {
-  // แต่ละ section แยกหน้าแล้ว – redirect ไปหน้าที่ถูกต้อง
   const urls = {
-    dashboard:  '../home/',
-    purchase:   '../purchase/',
-    receive:    '../receive/',
-    stock:      '../stock/',
-    withdrawal: '../withdrawal/',
-    recipients: '../recipients/',
-    reports:    '../report/',
-    products:   '../products/'
+    dashboard:  '/dashboard/home/',
+    purchase:   '/dashboard/purchase/',
+    receive:    '/dashboard/receive/',
+    stock:      '/dashboard/stock/',
+    withdrawal: '/dashboard/withdrawal/',
+    recipients: '/dashboard/recipients/',
+    reports:    '/dashboard/report/',
+    products:   '/dashboard/products/'
   };
   if (urls[name]) window.location.href = urls[name];
 }
