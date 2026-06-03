@@ -34,13 +34,22 @@ function initLayout(activePage) {
   }
 
   const langBtnLabel = lang === 'th' ? 'EN' : 'ภาษาไทย';
+  const user = Auth.getUser();
+  const isSuperAdmin = typeof Auth.isSuperAdmin === 'function' ? Auth.isSuperAdmin() : false;
+  const branchLabel = isSuperAdmin
+    ? '<span class="sidebar-branch-badge superadmin"><i class="fas fa-sitemap me-1"></i>สาขาหลัก</span>'
+    : user && user.branch_name
+      ? `<span class="sidebar-branch-badge"><i class="fas fa-store-alt me-1"></i>${user.branch_name}</span>`
+      : user && user.branch_id
+        ? `<span class="sidebar-branch-badge"><i class="fas fa-store-alt me-1"></i>${user.branch_id}</span>`
+        : '';
 
   document.getElementById('sidebar').innerHTML = `
     <div class="sidebar-brand d-flex align-items-center gap-2">
       <div class="sidebar-brand-icon"><i class="fas fa-boxes"></i></div>
       <div>
         <div class="sidebar-brand-text">${_t('sidebar_brand')}</div>
-        <div class="sidebar-brand-ver">v1.0.9</div>
+        <div class="sidebar-brand-ver">v1.1.0</div>
       </div>
     </div>
     ${isAdmin ? `<div class="sidebar-section-label">${_t('menu_main')}</div>
@@ -57,6 +66,7 @@ function initLayout(activePage) {
         <div>
           <div class="sidebar-user-name" id="user-name">-</div>
           <div class="sidebar-user-role" id="user-role">-</div>
+          ${branchLabel ? `<div id="user-branch">${branchLabel}</div>` : '<div id="user-branch"></div>'}
         </div>
       </div>
       <button class="btn btn-sm btn-outline-secondary w-100" onclick="I18n.setLang(I18n.getLang()==='th'?'en':'th')" style="font-size:.8rem;">

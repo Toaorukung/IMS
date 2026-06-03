@@ -33,7 +33,7 @@ $(document).ready(async function () {
   // 3. Render sidebar และ UI ทันทีจาก cache (ไม่มี flash)
   if (typeof initLayout === 'function') initLayout(page);
   $('#user-name').text(App.user.name || App.user.username);
-  $('#user-role').text(Auth.isAdmin() ? 'ผู้ดูแลระบบ' : 'พนักงาน');
+  $('#user-role').text(Auth.isSuperAdmin() ? 'ผู้ดูแลระบบหลัก' : Auth.isAdmin() ? 'ผู้ดูแลระบบ' : 'พนักงาน');
 
   // Logout
   $('#btn-logout').on('click', function () {
@@ -48,7 +48,15 @@ $(document).ready(async function () {
     // อัพเดท user จาก server (เผื่อ role หรือชื่อเปลี่ยน)
     App.user = check.user;
     $('#user-name').text(App.user.name || App.user.username);
-    $('#user-role').text(Auth.isAdmin() ? 'ผู้ดูแลระบบ' : 'พนักงาน');
+    $('#user-role').text(Auth.isSuperAdmin() ? 'ผู้ดูแลระบบหลัก' : Auth.isAdmin() ? 'ผู้ดูแลระบบ' : 'พนักงาน');
+    // อัพเดท branch badge หลัง server ยืนยัน (กรณี branch_name เปลี่ยน)
+    const u = check.user;
+    if (u && u.branch_name) {
+      const badge = Auth.isSuperAdmin()
+        ? '<span class="sidebar-branch-badge superadmin"><i class="fas fa-sitemap me-1"></i>สาขาหลัก</span>'
+        : `<span class="sidebar-branch-badge"><i class="fas fa-store-alt me-1"></i>${u.branch_name}</span>`;
+      $('#user-branch').html(badge);
+    }
     // ตรวจ page permission หลัง server ยืนยัน role จริง
     if (!Auth.isAdmin() && !STAFF_ALLOWED_PAGES.includes(page)) {
       window.location.replace('/dashboard/withdrawal/');
@@ -161,16 +169,17 @@ function populateRecipientSelects() {
 // SECTION: DASHBOARD
 // ============================================================
 async function loadDashboard() {
+  // superadmin: โหลดภาพรวมสาขาพร้อมกัน
+  if (Auth.isSuperAdmin()) loadBranchOverview();
+
   try {
     const res = await API.getDashboardStats();
     if (!res.success) throw new Error(res.message);
     const d = res.data;
-    // Map API fields to current HTML stat IDs
     $('#stat-products').text(Fmt.number(d.total_products));
-    $('#stat-stock').text(Fmt.number(d.total_stock || d.total_stock_units || 0));
+    $('#stat-stock').text(Fmt.number(d.total_stock_units || d.total_stock || 0));
     $('#stat-pending-imports').text(Fmt.number(d.pending_imports || d.pending_orders || 0));
     $('#stat-today-withdrawals').text(Fmt.number(d.completed_today || d.today_withdrawals || 0));
-    // Low-stock alert banner
     if (d.low_stock_items > 0) {
       $('#stock-alert-panel').removeClass('d-none');
       $('#stock-alert-items').text(d.low_stock_items + ' รายการ');
@@ -213,6 +222,96 @@ function renderRecentWithdrawals(items) {
       <td>${Fmt.statusBadge(w.status)}</td>
     </tr>`;
   }).join(''));
+}
+
+// ============================================================
+// BRANCH OVERVIEW (superadmin)
+// ============================================================
+async function loadBranchOverview() {
+  try {
+    const res = await API.getBranchOverview();
+    if (!res.success) return;
+    renderBranchOverview(res.data || []);
+  } catch (_) {}
+}
+
+function renderBranchOverview(branches) {
+  const $panel = $('#branch-overview-panel');
+  if (!$panel.length) return;
+  $panel.removeClass('d-none');
+  if (!branches.length) {
+    $('#branch-overview-body').html(
+      '<div class="col-12 text-center text-muted py-3">' +
+      'ยังไม่มีสาขา ' +
+      '<button class="btn btn-sm btn-primary ms-2" onclick="openBranchModal()">' +
+      '<i class="fas fa-plus me-1"></i>เพิ่มสาขาแรก</button></div>'
+    );
+    return;
+  }
+  $('#branch-overview-body').html(branches.map(b => {
+    const lowCls = b.low_stock_items > 0 ? 'text-danger fw-bold' : '';
+    return `<div class="col-xl-3 col-md-4 col-sm-6">
+      <div class="branch-card">
+        <div class="branch-card-header">
+          <i class="fas fa-store-alt me-2"></i><span class="branch-card-name">${b.name}</span>
+          <button class="btn-branch-edit ms-auto" title="แก้ไข"
+            onclick="openEditBranch('${b.id}','${(b.name||'').replace(/'/g,"\\'")}','${(b.address||'').replace(/'/g,"\\'")}','${(b.phone||'').replace(/'/g,"\\'")}')">
+            <i class="fas fa-edit"></i>
+          </button>
+        </div>
+        <div class="branch-card-body">
+          <div class="branch-stat-row">
+            <span class="bstat-label"><i class="fas fa-tags me-1"></i>สินค้า</span>
+            <span class="bstat-val">${Fmt.number(b.total_products)}</span>
+          </div>
+          <div class="branch-stat-row">
+            <span class="bstat-label"><i class="fas fa-warehouse me-1"></i>มูลค่าสต็อค</span>
+            <span class="bstat-val">${Fmt.currency(b.total_stock_value)}</span>
+          </div>
+          <div class="branch-stat-row">
+            <span class="bstat-label"><i class="fas fa-file-export me-1"></i>รอเบิก</span>
+            <span class="bstat-val">${Fmt.number(b.pending_withdrawals)}</span>
+          </div>
+          <div class="branch-stat-row">
+            <span class="bstat-label"><i class="fas fa-exclamation-triangle me-1"></i>สต็อคต่ำ</span>
+            <span class="bstat-val ${lowCls}">${Fmt.number(b.low_stock_items)}</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join(''));
+}
+
+let _editingBranchId = null;
+function openBranchModal() {
+  _editingBranchId = null;
+  $('#branch-form')[0].reset();
+  $('#modalBranchLabel').text('เพิ่มสาขา');
+  new bootstrap.Modal('#modalBranch').show();
+}
+function openEditBranch(id, name, address, phone) {
+  _editingBranchId = id;
+  $('#branch-name').val(name);
+  $('#branch-address').val(address);
+  $('#branch-phone').val(phone);
+  $('#modalBranchLabel').text('แก้ไขสาขา');
+  new bootstrap.Modal('#modalBranch').show();
+}
+async function saveBranch() {
+  const name = $('#branch-name').val().trim();
+  if (!name) { showToast('กรุณากรอกชื่อสาขา', 'warning'); return; }
+  const data = { name, address: $('#branch-address').val().trim(), phone: $('#branch-phone').val().trim() };
+  if (_editingBranchId) data.id = _editingBranchId;
+  $('#btn-save-branch').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');
+  try {
+    const res = _editingBranchId ? await API.updateBranch(data) : await API.addBranch(data);
+    if (res.success) {
+      showToast(_editingBranchId ? 'อัพเดทสาขาสำเร็จ!' : 'เพิ่มสาขาสำเร็จ!', 'success');
+      bootstrap.Modal.getOrCreateInstance('#modalBranch').hide();
+      loadBranchOverview();
+    } else throw new Error(res.message);
+  } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
+  $('#btn-save-branch').prop('disabled', false).html('<i class="fas fa-save me-1"></i>บันทึก');
 }
 
 function renderLowStockList(items) {

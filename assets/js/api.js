@@ -26,36 +26,40 @@ const API = (() => {
     validateToken: (token)       => post({ action: 'validateToken', token }),
 
     // Products
-    getProducts:   ()     => get('getProducts'),
-    addProduct:    (d)    => post({ action: 'addProduct', ...d }),
+    getProducts:   ()     => get('getProducts',   { branch_id: Auth.getBranchId() }),
+    addProduct:    (d)    => post({ action: 'addProduct',    branch_id: Auth.getBranchId(), ...d }),
     updateProduct: (d)    => post({ action: 'updateProduct', ...d }),
     deleteProduct: (id)   => post({ action: 'deleteProduct', id }),
 
     // Stock
-    getStock: () => get('getStock'),
+    getStock: () => get('getStock', { branch_id: Auth.getBranchId() }),
 
     // Imports
-    getImports:          ()           => get('getImports'),
-    addImport:           (d)          => post({ action: 'addImport', ...d }),
+    getImports:          ()           => get('getImports', { branch_id: Auth.getBranchId() }),
+    addImport:           (d)          => post({ action: 'addImport', branch_id: Auth.getBranchId(), ...d }),
     updateImportStatus:  (id, status, import_costs) =>
       post({ action: 'updateImportStatus', id, status, import_costs }),
 
     // Withdrawals
-    getWithdrawals:         ()           => get('getWithdrawals'),
-    addWithdrawal:          (d)          => post({ action: 'addWithdrawal', ...d }),
+    getWithdrawals:         ()           => get('getWithdrawals', { branch_id: Auth.getBranchId() }),
+    addWithdrawal:          (d)          => post({ action: 'addWithdrawal', branch_id: Auth.getBranchId(), ...d }),
     updateWithdrawalStatus: (id, status) => post({ action: 'updateWithdrawalStatus', id, status }),
     partialReturn:           (d)          => post({ action: 'partialReturn', ...d }),
 
     // Recipients
-    getRecipients:   ()  => get('getRecipients'),
-    addRecipient:    (d) => post({ action: 'addRecipient', ...d }),
+    getRecipients:   ()  => get('getRecipients',  { branch_id: Auth.getBranchId() }),
+    addRecipient:    (d) => post({ action: 'addRecipient', branch_id: Auth.getBranchId(), ...d }),
     updateRecipient: (d) => post({ action: 'updateRecipient', ...d }),
 
     // Reports
-    getDashboardStats: ()           => get('getDashboardStats'),
-    getMonthlyReport:  (month, year)=> get('getMonthlyReport', { month, year }),
+    getDashboardStats: ()            => get('getDashboardStats', { branch_id: Auth.getBranchId() }),
+    getMonthlyReport:  (month, year) => get('getMonthlyReport',  { month, year, branch_id: Auth.getBranchId() }),
 
-   
+    // Branches
+    getBranches:       ()  => get('getBranches'),
+    addBranch:         (d) => post({ action: 'addBranch',    ...d }),
+    updateBranch:      (d) => post({ action: 'updateBranch', ...d }),
+    getBranchOverview: ()  => get('getBranchOverview'),
   };
 })();
 
@@ -71,6 +75,11 @@ const Auth = (() => {
     getUser:  () => {
       const u = sessionStorage.getItem(CONFIG.USER_KEY);
       return u ? JSON.parse(u) : null;
+    },
+    getBranchId: () => {
+      const u = sessionStorage.getItem(CONFIG.USER_KEY);
+      const user = u ? JSON.parse(u) : null;
+      return user ? (user.branch_id || '') : '';
     },
     save: (token, user) => {
       sessionStorage.setItem(CONFIG.TOKEN_KEY, token);
@@ -104,8 +113,11 @@ const Auth = (() => {
       return { ok: false };
     },
 
-    /** true เฉพาะเมื่อ server ยืนยันว่าเป็น admin */
-    isAdmin: () => _verifiedRole === 'admin',
+    /** true เมื่อ server ยืนยันว่าเป็น admin หรือ superadmin */
+    isAdmin: () => _verifiedRole === 'admin' || _verifiedRole === 'superadmin',
+
+    /** true เฉพาะ superadmin (สาขาหลัก) */
+    isSuperAdmin: () => _verifiedRole === 'superadmin',
 
     /** ตั้งค่า role จาก cache (ใช้สำหรับ render UI ทันที ก่อน server ยืนยัน) */
     setCachedRole: (role) => { _verifiedRole = role; }
