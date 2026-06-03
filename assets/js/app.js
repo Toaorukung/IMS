@@ -18,6 +18,7 @@ const App = {
 $(document).ready(async function () {
   const page = document.body.dataset.page || 'home';
   const STAFF_ALLOWED_PAGES = ['withdrawal'];
+  const SUPERADMIN_ONLY_PAGES = ['users'];
 
   // 1. ถ้าไม่มี token เลย → ไป login ทันที (ไม่รอ server)
   if (!Auth.isLoggedIn()) { window.location.replace('/login/'); return; }
@@ -58,19 +59,26 @@ $(document).ready(async function () {
       $('#user-branch').html(badge);
     }
     // ตรวจ page permission หลัง server ยืนยัน role จริง
-    if (!Auth.isAdmin() && !STAFF_ALLOWED_PAGES.includes(page)) {
+    if (SUPERADMIN_ONLY_PAGES.includes(page) && !Auth.isSuperAdmin()) {
+      window.location.replace('/dashboard/home/');
+    } else if (!Auth.isAdmin() && !STAFF_ALLOWED_PAGES.includes(page)) {
       window.location.replace('/dashboard/withdrawal/');
     }
   });
 
   // 5. ตรวจ page permission จาก cache ก่อน (กัน flash ของ content)
+  if (SUPERADMIN_ONLY_PAGES.includes(page) && !Auth.isSuperAdmin()) {
+    window.location.replace('/dashboard/home/'); return;
+  }
   if (!Auth.isAdmin() && !STAFF_ALLOWED_PAGES.includes(page)) {
-    window.location.replace('/dashboard/withdrawal/');
-    return;
+    window.location.replace('/dashboard/withdrawal/'); return;
   }
 
   // Prefetch shared data
   prefetchData();
+
+  // แจ้งหน้าที่ต้องการรู้ว่า app init เสร็จแล้ว (เช่น หน้า users)
+  document.dispatchEvent(new Event('appReady'));
 
   // URL param: ?new=1 to auto-open create modal
   const urlParams = new URLSearchParams(window.location.search);
@@ -85,6 +93,7 @@ $(document).ready(async function () {
     case 'recipients': loadRecipients(); break;
     case 'report':     initReports();    break;
     case 'products':   loadProducts();   break;
+    case 'users':      /* handled by inline script in users/index.html */ break;
   }
 });
 

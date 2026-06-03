@@ -22,8 +22,9 @@ function initLayout(activePage) {
   ];
 
   const menuSettings = isAdmin ? [
-    { key: 'report',   icon: 'fa-chart-bar', label: _t('nav_report'),   url: '/dashboard/report/' },
-    { key: 'products', icon: 'fa-tags',      label: _t('nav_products'), url: '/dashboard/products/' }
+    { key: 'report',   icon: 'fa-chart-bar',    label: _t('nav_report'),   url: '/dashboard/report/' },
+    { key: 'products', icon: 'fa-tags',          label: _t('nav_products'), url: '/dashboard/products/' },
+    ...(isSuperAdmin ? [{ key: 'users', icon: 'fa-users-cog', label: 'ผู้ใช้งาน', url: '/dashboard/users/' }] : [])
   ] : [];
 
   function makeNavItems(items) {

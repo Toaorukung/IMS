@@ -130,6 +130,9 @@ function processRequest(action, params, body) {
       case 'addBranch':              return addBranch(p);
       case 'updateBranch':           return updateBranch(p);
       case 'getBranchOverview':      return getBranchOverview();
+      case 'getUsers':               return getUsers(p);
+      case 'addUser':                return addUser(p);
+      case 'updateUser':             return updateUser(p);
       default: return { success: false, message: 'Unknown action: ' + action };
     }
   } catch (err) {
@@ -589,6 +592,60 @@ function updateRecipient(data) {
   if (!sheet) return { success: false };
   const ok = updateRow(sheet, data.id, data);
   return { success: ok, message: ok ? 'อัพเดทสำเร็จ' : 'ไม่พบผู้รับ' };
+}
+
+// ---------- Users ----------
+function getUsers(p) {
+  const sheet = getSheet('Users');
+  if (!sheet) return { success: false, message: 'ไม่พบชีท Users' };
+  const requesterRole = (p || {}).requester_role || '';
+  const requesterBranch = (p || {}).requester_branch || '';
+  let users = sheetToObjects(sheet).map(function(u) {
+    // ไม่ส่ง password กลับ
+    return { id: u.id, username: u.username, name: u.name, role: u.role,
+             status: u.status, created_at: u.created_at, branch_id: u.branch_id || '',
+             branch_name: getBranchName(u.branch_id || '') };
+  });
+  // admin สาขาเห็นเฉพาะ user ในสาขาตัวเอง
+  if (requesterRole === 'admin' && requesterBranch) {
+    users = users.filter(function(u) { return String(u.branch_id) === String(requesterBranch); });
+  }
+  return { success: true, data: users };
+}
+
+function addUser(data) {
+  const sheet = getSheet('Users');
+  if (!sheet) return { success: false, message: 'ไม่พบชีท Users' };
+  // ตรวจ username ซ้ำ
+  const existing = sheetToObjects(sheet);
+  if (existing.find(function(u) { return String(u.username) === String(data.username); })) {
+    return { success: false, message: 'ชื่อผู้ใช้นี้มีอยู่แล้ว' };
+  }
+  if (!data.username || !data.password || !data.name) {
+    return { success: false, message: 'กรุณากรอก username, password และชื่อ' };
+  }
+  const validRoles = ['superadmin', 'admin', 'staff'];
+  if (!validRoles.includes(data.role)) {
+    return { success: false, message: 'role ไม่ถูกต้อง (superadmin / admin / staff)' };
+  }
+  const id = uid('USR');
+  sheet.appendRow([id, data.username, data.password, data.name,
+    data.role, 'active', now(), data.branch_id || '']);
+  return { success: true, id, message: 'เพิ่มผู้ใช้สำเร็จ' };
+}
+
+function updateUser(data) {
+  const sheet = getSheet('Users');
+  if (!sheet) return { success: false, message: 'ไม่พบชีท Users' };
+  if (!data.id) return { success: false, message: 'ไม่ระบุ id' };
+  const updates = {};
+  if (data.name     !== undefined) updates.name      = data.name;
+  if (data.role     !== undefined) updates.role      = data.role;
+  if (data.status   !== undefined) updates.status    = data.status;
+  if (data.branch_id !== undefined) updates.branch_id = data.branch_id;
+  if (data.password && data.password.trim() !== '') updates.password = data.password;
+  const ok = updateRow(sheet, data.id, updates);
+  return { success: ok, message: ok ? 'อัพเดทสำเร็จ' : 'ไม่พบผู้ใช้' };
 }
 
 // ---------- Branches ----------

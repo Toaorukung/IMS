@@ -60,6 +60,14 @@ const API = (() => {
     addBranch:         (d) => post({ action: 'addBranch',    ...d }),
     updateBranch:      (d) => post({ action: 'updateBranch', ...d }),
     getBranchOverview: ()  => get('getBranchOverview'),
+
+    // Users
+    getUsers:   () => get('getUsers', {
+      requester_role:   Auth.getUser() ? Auth.getUser().role   : '',
+      requester_branch: Auth.getBranchId()
+    }),
+    addUser:    (d) => post({ action: 'addUser',    ...d }),
+    updateUser: (d) => post({ action: 'updateUser', ...d }),
   };
 })();
 

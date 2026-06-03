@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>จัดการผู้ใช้งาน – ระบบเบิกสินค้าและจัดการคลังสินค้า</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-page="users">
+<div id="wrapper">
+
+<nav id="sidebar"></nav>
+
+<div id="main-content">
+  <div id="topbar">
+    <div class="d-flex align-items-center gap-3">
+      <button id="sidebar-toggle" class="btn btn-sm btn-outline-secondary d-lg-none"><i class="fas fa-bars"></i></button>
+      <div class="topbar-title"><i class="fas fa-users-cog me-2"></i>จัดการผู้ใช้งาน</div>
+    </div>
+    <div class="topbar-actions">
+      <a href="/dashboard/home/" class="btn btn-sm btn-outline-secondary" title="หน้าหลัก"><i class="fas fa-home"></i></a>
+      <button id="btn-logout" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt me-1"></i>ออกจากระบบ</button>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <div class="section-header mb-3">
+      <div class="section-header-title"><i class="fas fa-users-cog me-2 text-primary"></i>ผู้ใช้งานในระบบ</div>
+      <button class="btn btn-primary" onclick="openAddUser()"><i class="fas fa-plus me-1"></i>เพิ่มผู้ใช้</button>
+    </div>
+
+    <!-- ROLE LEGEND -->
+    <div class="d-flex gap-2 flex-wrap mb-3">
+      <span class="badge bg-danger px-3 py-2"><i class="fas fa-crown me-1"></i>superadmin – สาขาหลัก เห็นข้อมูลทุกสาขา</span>
+      <span class="badge bg-primary px-3 py-2"><i class="fas fa-user-shield me-1"></i>admin – ผู้ดูแลสาขา</span>
+      <span class="badge bg-secondary px-3 py-2"><i class="fas fa-user me-1"></i>staff – พนักงาน (เบิกได้อย่างเดียว)</span>
+    </div>
+
+    <div class="panel">
+      <div class="table-responsive">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ชื่อผู้ใช้</th>
+              <th>ชื่อ-นามสกุล</th>
+              <th>Role</th>
+              <th>สาขา</th>
+              <th>สถานะ</th>
+              <th>จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="users-table-body">
+            <tr><td colspan="6" class="text-center text-muted py-5">
+              <div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- MODAL: เพิ่ม/แก้ไขผู้ใช้ -->
+<div class="modal fade" id="modalUser" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalUserLabel"><i class="fas fa-user-plus me-2"></i>เพิ่มผู้ใช้</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="user-form">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">ชื่อผู้ใช้ (username) <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="usr-username" placeholder="เช่น branch_bkk" autocomplete="off">
+              <div id="usr-username-hint" class="form-text text-muted d-none">ไม่สามารถเปลี่ยนได้หลังสร้าง</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">รหัสผ่าน <span id="usr-pw-required" class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="usr-password" placeholder="รหัสผ่าน" autocomplete="off">
+              <div id="usr-pw-hint" class="form-text text-muted d-none">เว้นว่างไว้เพื่อไม่เปลี่ยน</div>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">ชื่อ-นามสกุล <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" id="usr-name" placeholder="ชื่อที่แสดงในระบบ">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Role <span class="text-danger">*</span></label>
+              <select class="form-select" id="usr-role" onchange="onRoleChange()">
+                <option value="staff">staff – พนักงาน</option>
+                <option value="admin">admin – ผู้ดูแลสาขา</option>
+                <option value="superadmin">superadmin – สาขาหลัก</option>
+              </select>
+            </div>
+            <div class="col-md-6" id="usr-branch-group">
+              <label class="form-label fw-semibold">สาขา <span class="text-danger">*</span></label>
+              <select class="form-select" id="usr-branch">
+                <option value="">-- เลือกสาขา --</option>
+              </select>
+            </div>
+            <div class="col-md-6" id="usr-status-group" style="display:none;">
+              <label class="form-label fw-semibold">สถานะ</label>
+              <select class="form-select" id="usr-status">
+                <option value="active">active – ใช้งาน</option>
+                <option value="inactive">inactive – ระงับ</option>
+              </select>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-primary" id="btn-save-user" onclick="saveUser()">
+          <i class="fas fa-save me-1"></i>บันทึก
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/i18n.js"></script>
+<script src="../../assets/js/api.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/app.js"></script>
+<script>
+// =========================================================
+// Users Page Logic
+// =========================================================
+let _branches = [];
+let _editingUserId = null;
+
+async function pageInitUsers() {
+  // โหลด branches เพื่อ populate dropdown
+  try {
+    const br = await API.getBranches();
+    _branches = br.data || [];
+    const opts = _branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+    $('#usr-branch').append(opts);
+  } catch (_) {}
+  loadUsers();
+}
+
+async function loadUsers() {
+  try {
+    const res = await API.getUsers();
+    if (!res.success) throw new Error(res.message);
+    renderUsersTable(res.data || []);
+  } catch (e) { showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger'); }
+}
+
+const ROLE_BADGE = {
+  superadmin: '<span class="badge bg-danger"><i class="fas fa-crown me-1"></i>superadmin</span>',
+  admin:      '<span class="badge bg-primary"><i class="fas fa-user-shield me-1"></i>admin</span>',
+  staff:      '<span class="badge bg-secondary"><i class="fas fa-user me-1"></i>staff</span>'
+};
+
+function renderUsersTable(users) {
+  if (!users.length) {
+    $('#users-table-body').html('<tr><td colspan="6" class="text-center text-muted py-5">ไม่พบข้อมูล</td></tr>');
+    return;
+  }
+  $('#users-table-body').html(users.map(u => {
+    const roleBadge   = ROLE_BADGE[u.role] || `<span class="badge bg-light text-dark">${u.role}</span>`;
+    const branchLabel = u.role === 'superadmin'
+      ? '<span class="text-muted fst-italic">ทุกสาขา</span>'
+      : u.branch_name || u.branch_id || '<span class="text-warning">ยังไม่ระบุ</span>';
+    const statusBadge = u.status === 'active'
+      ? '<span class="badge bg-success">active</span>'
+      : '<span class="badge bg-secondary">inactive</span>';
+    // superadmin ไม่ให้ลบตัวเอง (อาจ disable ปุ่ม)
+    return `<tr>
+      <td class="fw-semibold"><i class="fas fa-user-circle me-1 text-muted"></i>${u.username}</td>
+      <td>${u.name}</td>
+      <td>${roleBadge}</td>
+      <td>${branchLabel}</td>
+      <td>${statusBadge}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary me-1" onclick="openEditUser('${u.id}')">
+          <i class="fas fa-edit"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-${u.status === 'active' ? 'warning' : 'success'}"
+          title="${u.status === 'active' ? 'ระงับ' : 'เปิดใช้'}"
+          onclick="toggleUserStatus('${u.id}','${u.status === 'active' ? 'inactive' : 'active'}')">
+          <i class="fas fa-${u.status === 'active' ? 'ban' : 'check'}"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join(''));
+}
+
+function onRoleChange() {
+  const role = $('#usr-role').val();
+  if (role === 'superadmin') {
+    $('#usr-branch-group').hide();
+    $('#usr-branch').val('');
+  } else {
+    $('#usr-branch-group').show();
+  }
+}
+
+function openAddUser() {
+  _editingUserId = null;
+  $('#user-form')[0].reset();
+  $('#usr-branch').val('');
+  $('#usr-role').val('staff');
+  $('#usr-branch-group').show();
+  $('#usr-status-group').hide();
+  $('#usr-pw-required').show();
+  $('#usr-pw-hint').addClass('d-none');
+  $('#usr-username').prop('disabled', false);
+  $('#usr-username-hint').addClass('d-none');
+  $('#modalUserLabel').html('<i class="fas fa-user-plus me-2"></i>เพิ่มผู้ใช้');
+  new bootstrap.Modal('#modalUser').show();
+}
+
+function openEditUser(id) {
+  // หาข้อมูล user จากตาราง (ดึง DOM ไม่ดี — refetch จาก state แทน)
+  API.getUsers().then(res => {
+    const u = (res.data || []).find(x => x.id === id);
+    if (!u) return;
+    _editingUserId = id;
+    $('#usr-username').val(u.username).prop('disabled', true);
+    $('#usr-username-hint').removeClass('d-none');
+    $('#usr-password').val('');
+    $('#usr-pw-required').hide();
+    $('#usr-pw-hint').removeClass('d-none');
+    $('#usr-name').val(u.name);
+    $('#usr-role').val(u.role);
+    $('#usr-branch').val(u.branch_id || '');
+    $('#usr-status').val(u.status || 'active');
+    $('#usr-status-group').show();
+    onRoleChange();
+    $('#modalUserLabel').html('<i class="fas fa-user-edit me-2"></i>แก้ไขผู้ใช้');
+    new bootstrap.Modal('#modalUser').show();
+  });
+}
+
+async function saveUser() {
+  const role = $('#usr-role').val();
+  const name = $('#usr-name').val().trim();
+  if (!name) { showToast('กรุณากรอกชื่อ', 'warning'); return; }
+  if (role !== 'superadmin' && !$('#usr-branch').val()) {
+    showToast('กรุณาเลือกสาขาสำหรับ role ' + role, 'warning'); return;
+  }
+
+  const data = {
+    name,
+    role,
+    branch_id: role === 'superadmin' ? '' : $('#usr-branch').val(),
+  };
+
+  if (_editingUserId) {
+    data.id = _editingUserId;
+    if ($('#usr-status').val()) data.status = $('#usr-status').val();
+    const pw = $('#usr-password').val().trim();
+    if (pw) data.password = pw;
+  } else {
+    const username = $('#usr-username').val().trim();
+    const password = $('#usr-password').val().trim();
+    if (!username || !password) { showToast('กรุณากรอก username และ password', 'warning'); return; }
+    data.username = username;
+    data.password = password;
+  }
+
+  $('#btn-save-user').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');
+  try {
+    const res = _editingUserId ? await API.updateUser(data) : await API.addUser(data);
+    if (res.success) {
+      showToast(_editingUserId ? 'อัพเดทสำเร็จ!' : 'เพิ่มผู้ใช้สำเร็จ!', 'success');
+      bootstrap.Modal.getOrCreateInstance('#modalUser').hide();
+      loadUsers();
+    } else throw new Error(res.message);
+  } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
+  $('#btn-save-user').prop('disabled', false).html('<i class="fas fa-save me-1"></i>บันทึก');
+}
+
+async function toggleUserStatus(id, newStatus) {
+  const label = newStatus === 'inactive' ? 'ระงับ' : 'เปิดใช้';
+  if (!confirm(`ต้องการ${label}ผู้ใช้นี้?`)) return;
+  try {
+    const res = await API.updateUser({ id, status: newStatus });
+    if (res.success) { showToast(`${label}สำเร็จ`, 'success'); loadUsers(); }
+    else throw new Error(res.message);
+  } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
+}
+
+// รอให้ app.js init เสร็จก่อน แล้วค่อยโหลด users
+document.addEventListener('appReady', pageInitUsers);
+</script>
+</body>
+</html>
