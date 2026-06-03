@@ -55,19 +55,17 @@ const API = (() => {
     getDashboardStats: ()            => get('getDashboardStats', { branch_id: Auth.getBranchId() }),
     getMonthlyReport:  (month, year) => get('getMonthlyReport',  { month, year, branch_id: Auth.getBranchId() }),
 
-    // Branches
-    getBranches:       ()  => get('getBranches'),
-    addBranch:         (d) => post({ action: 'addBranch',    ...d }),
-    updateBranch:      (d) => post({ action: 'updateBranch', ...d }),
-    getBranchOverview: ()  => get('getBranchOverview'),
+    // Branches (token required server-side for write ops)
+    getBranches:       ()   => get('getBranches'),
+    addBranch:         (d)  => post({ action: 'addBranch',    token: Auth.getToken(), ...d }),
+    updateBranch:      (d)  => post({ action: 'updateBranch', token: Auth.getToken(), ...d }),
+    deleteBranch:      (id) => post({ action: 'deleteBranch', token: Auth.getToken(), id }),
+    getBranchOverview: ()   => get('getBranchOverview'),
 
-    // Users
-    getUsers:   () => get('getUsers', {
-      requester_role:   Auth.getUser() ? Auth.getUser().role   : '',
-      requester_branch: Auth.getBranchId()
-    }),
-    addUser:    (d) => post({ action: 'addUser',    ...d }),
-    updateUser: (d) => post({ action: 'updateUser', ...d }),
+    // Users (token required server-side)
+    getUsers:   () => get('getUsers', { token: Auth.getToken() }),
+    addUser:    (d) => post({ action: 'addUser',    token: Auth.getToken(), ...d }),
+    updateUser: (d) => post({ action: 'updateUser', token: Auth.getToken(), ...d }),
   };
 })();
 

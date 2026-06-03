@@ -250,10 +250,9 @@ function renderBranchOverview(branches) {
   $panel.removeClass('d-none');
   if (!branches.length) {
     $('#branch-overview-body').html(
-      '<div class="col-12 text-center text-muted py-3">' +
-      'ยังไม่มีสาขา ' +
-      '<button class="btn btn-sm btn-primary ms-2" onclick="openBranchModal()">' +
-      '<i class="fas fa-plus me-1"></i>เพิ่มสาขาแรก</button></div>'
+      `<div class="col-12 text-center text-muted py-3">${t('no_branches_msg')} ` +
+      `<button class="btn btn-sm btn-primary ms-2" onclick="openBranchModal()">` +
+      `<i class="fas fa-plus me-1"></i>${t('btn_add_first_branch')}</button></div>`
     );
     return;
   }
@@ -263,26 +262,30 @@ function renderBranchOverview(branches) {
       <div class="branch-card">
         <div class="branch-card-header">
           <i class="fas fa-store-alt me-2"></i><span class="branch-card-name">${b.name}</span>
-          <button class="btn-branch-edit ms-auto" title="แก้ไข"
+          <button class="btn-branch-edit ms-auto" title="${t('th_manage')}"
             onclick="openEditBranch('${b.id}','${(b.name||'').replace(/'/g,"\\'")}','${(b.address||'').replace(/'/g,"\\'")}','${(b.phone||'').replace(/'/g,"\\'")}')">
             <i class="fas fa-edit"></i>
+          </button>
+          <button class="btn-branch-edit ms-1" title="${t('btn_delete_branch')}" style="background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.4);color:#fca5a5;"
+            onclick="confirmDeleteBranch('${b.id}','${(b.name||'').replace(/'/g,"\\'")}')">
+            <i class="fas fa-trash"></i>
           </button>
         </div>
         <div class="branch-card-body">
           <div class="branch-stat-row">
-            <span class="bstat-label"><i class="fas fa-tags me-1"></i>สินค้า</span>
+            <span class="bstat-label"><i class="fas fa-tags me-1"></i>${t('bstat_products')}</span>
             <span class="bstat-val">${Fmt.number(b.total_products)}</span>
           </div>
           <div class="branch-stat-row">
-            <span class="bstat-label"><i class="fas fa-warehouse me-1"></i>มูลค่าสต็อค</span>
+            <span class="bstat-label"><i class="fas fa-warehouse me-1"></i>${t('bstat_stock_val')}</span>
             <span class="bstat-val">${Fmt.currency(b.total_stock_value)}</span>
           </div>
           <div class="branch-stat-row">
-            <span class="bstat-label"><i class="fas fa-file-export me-1"></i>รอเบิก</span>
+            <span class="bstat-label"><i class="fas fa-file-export me-1"></i>${t('bstat_pending_wd')}</span>
             <span class="bstat-val">${Fmt.number(b.pending_withdrawals)}</span>
           </div>
           <div class="branch-stat-row">
-            <span class="bstat-label"><i class="fas fa-exclamation-triangle me-1"></i>สต็อคต่ำ</span>
+            <span class="bstat-label"><i class="fas fa-exclamation-triangle me-1"></i>${t('bstat_low_stock')}</span>
             <span class="bstat-val ${lowCls}">${Fmt.number(b.low_stock_items)}</span>
           </div>
         </div>
@@ -295,7 +298,7 @@ let _editingBranchId = null;
 function openBranchModal() {
   _editingBranchId = null;
   $('#branch-form')[0].reset();
-  $('#modalBranchLabel').text('เพิ่มสาขา');
+  $('#modalBranchLabel').text(t('modal_add_branch'));
   new bootstrap.Modal('#modalBranch').show();
 }
 function openEditBranch(id, name, address, phone) {
@@ -303,9 +306,20 @@ function openEditBranch(id, name, address, phone) {
   $('#branch-name').val(name);
   $('#branch-address').val(address);
   $('#branch-phone').val(phone);
-  $('#modalBranchLabel').text('แก้ไขสาขา');
+  $('#modalBranchLabel').text(t('modal_edit_branch'));
   new bootstrap.Modal('#modalBranch').show();
 }
+async function confirmDeleteBranch(id, name) {
+  if (!confirm(`${t('confirm_delete_branch')}\n"${name}"`)) return;
+  try {
+    const res = await API.deleteBranch(id);
+    if (res.success) {
+      showToast(t('btn_delete_branch') + ' สำเร็จ', 'success');
+      loadBranchOverview();
+    } else throw new Error(res.message);
+  } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
+}
+
 async function saveBranch() {
   const name = $('#branch-name').val().trim();
   if (!name) { showToast('กรุณากรอกชื่อสาขา', 'warning'); return; }

@@ -129,6 +129,7 @@ function processRequest(action, params, body) {
       case 'getBranches':            return getBranches();
       case 'addBranch':              return addBranch(p);
       case 'updateBranch':           return updateBranch(p);
+      case 'deleteBranch':           return deleteBranch(p);
       case 'getBranchOverview':      return getBranchOverview();
       case 'getUsers':               return getUsers(p);
       case 'addUser':                return addUser(p);
@@ -167,19 +168,64 @@ function updateRow(sheet, id, updates) {
   });
   return true;
 }
-function filterByBranch(rows, branchId) {
-  if (!branchId) return rows;
+
+// Fix 6: guard non-superadmin with no branch — empty branchId means "all" only for superadmin
+// role param optional; when omitted behaves as before (backward compat for internal callers)
+function filterByBranch(rows, branchId, role) {
+  if (!branchId) {
+    // non-superadmin with no branch → return nothing, not everything
+    if (role && role !== 'superadmin') return [];
+    return rows;
+  }
   return rows.filter(function(r) { return String(r.branch_id || '') === String(branchId); });
 }
 
+// ---------- Cache Helpers ----------
+function _cacheGet(key) {
+  try { var v = CacheService.getScriptCache().get(key); return v ? JSON.parse(v) : null; }
+  catch (_) { return null; }
+}
+function _cachePut(key, value, ttl) {
+  try { CacheService.getScriptCache().put(key, JSON.stringify(value), ttl || 300); } catch (_) {}
+}
+function _cacheRemove(key) {
+  try { CacheService.getScriptCache().remove(key); } catch (_) {}
+}
+
+// ---------- Auth Gate ----------
+// Fix 1: validate token server-side before allowing sensitive operations
+// Uses CacheService so repeated calls within the TTL don't re-read sheets
+function requireAuth(p, requiredRoles) {
+  var token = (p || {}).token || '';
+  if (!token) return { ok: false, message: 'กรุณาเข้าสู่ระบบ (token หายไป)' };
+  var cacheKey = 'auth_' + token;
+  var user = _cacheGet(cacheKey);
+  if (!user) {
+    var result = validateToken({ token: token });
+    if (!result.success) return { ok: false, message: result.message || 'Token ไม่ถูกต้องหรือหมดอายุ' };
+    user = result.user;
+    _cachePut(cacheKey, user, 300);
+  }
+  if (requiredRoles && requiredRoles.length && requiredRoles.indexOf(user.role) === -1) {
+    return { ok: false, message: 'ไม่มีสิทธิ์ดำเนินการนี้ (ต้องการ: ' + requiredRoles.join('/') + ')' };
+  }
+  return { ok: true, user: user };
+}
+
 // ---------- Branch Lookup ----------
+// Fix 4: cache branch names — Branches sheet changes rarely, no need to re-read every validateToken
 function getBranchName(branchId) {
   if (!branchId) return '';
-  const sheet = getSheet('Branches');
-  if (!sheet) return branchId;
-  const branches = sheetToObjects(sheet);
-  const branch = branches.find(function(b) { return b.id === branchId; });
-  return branch ? (branch.name || branchId) : branchId;
+  var cacheKey = 'bname_' + branchId;
+  var cached = _cacheGet(cacheKey);
+  if (cached !== null) return cached;
+  var sheet = getSheet('Branches');
+  if (!sheet) { _cachePut(cacheKey, branchId, 600); return branchId; }
+  var branches = sheetToObjects(sheet);
+  var branch = branches.find(function(b) { return b.id === branchId; });
+  var name = branch ? (branch.name || branchId) : branchId;
+  _cachePut(cacheKey, name, 600); // 10-minute TTL
+  return name;
 }
 
 // ---------- Authentication ----------
@@ -582,8 +628,9 @@ function addRecipient(data) {
   if (!sheet) return { success: false };
   const id       = uid('RCP');
   const branchId = data.branch_id || '';
+  // Fix 2: "'" + (data.phone || '') — parens required, otherwise "'" + undefined → "'undefined"
   sheet.appendRow([id, data.name, data.department || '', data.position || '',
-    "'" + data.phone || '', data.email || '', data.notes || '', 'active', now(), branchId]);
+    "'" + (data.phone || ''), data.email || '', data.notes || '', 'active', now(), branchId]);
   return { success: true, id, message: 'เพิ่มผู้รับสินค้าสำเร็จ' };
 }
 
@@ -596,10 +643,13 @@ function updateRecipient(data) {
 
 // ---------- Users ----------
 function getUsers(p) {
+  const auth = requireAuth(p, ['superadmin', 'admin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Users');
   if (!sheet) return { success: false, message: 'ไม่พบชีท Users' };
-  const requesterRole = (p || {}).requester_role || '';
-  const requesterBranch = (p || {}).requester_branch || '';
+  // ใช้ role/branch จาก server (token-verified) ไม่ใช่จาก request body
+  const requesterRole   = auth.user.role;
+  const requesterBranch = auth.user.branch_id || '';
   let users = sheetToObjects(sheet).map(function(u) {
     // ไม่ส่ง password กลับ
     return { id: u.id, username: u.username, name: u.name, role: u.role,
@@ -614,6 +664,8 @@ function getUsers(p) {
 }
 
 function addUser(data) {
+  const auth = requireAuth(data, ['superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Users');
   if (!sheet) return { success: false, message: 'ไม่พบชีท Users' };
   // ตรวจ username ซ้ำ
@@ -635,6 +687,9 @@ function addUser(data) {
 }
 
 function updateUser(data) {
+  const auth = requireAuth(data, ['superadmin', 'admin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  // admin สาขาแก้ได้เฉพาะ user ในสาขาตัวเอง และไม่สามารถเปลี่ยน role เป็น superadmin
   const sheet = getSheet('Users');
   if (!sheet) return { success: false, message: 'ไม่พบชีท Users' };
   if (!data.id) return { success: false, message: 'ไม่ระบุ id' };
@@ -656,6 +711,8 @@ function getBranches() {
 }
 
 function addBranch(data) {
+  const auth = requireAuth(data, ['superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Branches');
   if (!sheet) return { success: false, message: 'ไม่พบชีท Branches กรุณาสร้างชีทในกูเกิลชีทก่อน' };
   const id = uid('BRN');
@@ -664,28 +721,83 @@ function addBranch(data) {
 }
 
 function updateBranch(data) {
+  const auth = requireAuth(data, ['superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Branches');
   if (!sheet) return { success: false };
   const ok = updateRow(sheet, data.id, data);
   return { success: ok, message: ok ? 'อัพเดทสำเร็จ' : 'ไม่พบสาขา' };
 }
 
+function deleteBranch(data) {
+  const auth = requireAuth(data, ['superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  const sheet = getSheet('Branches');
+  if (!sheet) return { success: false };
+  // ตรวจว่ายังมี user อยู่ในสาขานี้ไหม
+  const userSheet = getSheet('Users');
+  if (userSheet) {
+    const users = sheetToObjects(userSheet).filter(function(u) {
+      return String(u.branch_id) === String(data.id) && u.status === 'active';
+    });
+    if (users.length > 0) {
+      return { success: false, message: 'ไม่สามารถลบได้ ยังมีผู้ใช้งาน ' + users.length + ' คนอยู่ในสาขานี้' };
+    }
+  }
+  const ok = updateRow(sheet, data.id, { status: 'inactive' });
+  return { success: ok, message: ok ? 'ลบสาขาสำเร็จ' : 'ไม่พบสาขา' };
+}
+
+// Fix 3: read each sheet once, aggregate per-branch in memory — O(4) reads not O(4N)
 function getBranchOverview() {
   const branches = getBranches().data || [];
-  const result   = branches.map(function(branch) {
-    const stats = getDashboardStats({ branch_id: branch.id }).data || {};
+  if (!branches.length) return { success: true, data: [] };
+
+  const stockRows = sheetToObjects(getSheet('Stock'))       || [];
+  const wRows     = sheetToObjects(getSheet('Withdrawals')) || [];
+  const iRows     = sheetToObjects(getSheet('Imports'))     || [];
+  const todayStr  = new Date().toDateString();
+  const m = new Date().getMonth();
+  const y = new Date().getFullYear();
+
+  const result = branches.map(function(branch) {
+    const bid = branch.id;
+
+    // Stock aggregation
+    const stockFiltered = stockRows.filter(function(r) { return String(r.branch_id || '') === bid; });
+    const stockMap = {};
+    stockFiltered.forEach(function(r) {
+      var pid = String(r.product_id);
+      var qty = parseFloat(r.quantity) || 0;
+      if (!stockMap[pid]) stockMap[pid] = { quantity: 0, min_stock: parseFloat(r.min_stock) || 0, total_value: 0 };
+      stockMap[pid].quantity    += qty;
+      stockMap[pid].total_value += qty * (parseFloat(r.cost_price) || 0);
+    });
+    const agg = Object.values(stockMap);
+    const total_products    = agg.length;
+    const total_stock_value = agg.reduce(function(s, p) { return s + p.total_value; }, 0);
+    const total_stock_units = agg.reduce(function(s, p) { return s + p.quantity; }, 0);
+    const low_stock_items   = agg.filter(function(p) { return p.min_stock > 0 && p.quantity <= p.min_stock; }).length;
+
+    // Withdrawal stats
+    const wFiltered = wRows.filter(function(r) { return String(r.branch_id || '') === bid; });
+    const pending_withdrawals = wFiltered.filter(function(r) { return r.status === 'pending'; }).length;
+    const completed_today     = wFiltered.filter(function(r) {
+      return r.status === 'completed' && new Date(r.created_at).toDateString() === todayStr;
+    }).length;
+
+    // Import stats
+    const month_imports = iRows.filter(function(r) {
+      if (String(r.branch_id || '') !== bid) return false;
+      var d = new Date(r.order_date);
+      return d.getMonth() === m && d.getFullYear() === y;
+    }).length;
+
     return {
-      id:                branch.id,
-      name:              branch.name,
-      address:           branch.address || '',
-      phone:             branch.phone   || '',
-      total_products:    stats.total_products    || 0,
-      total_stock_value: stats.total_stock_value || 0,
-      total_stock_units: stats.total_stock_units || 0,
-      low_stock_items:   stats.low_stock_items   || 0,
-      pending_withdrawals: stats.pending_withdrawals || 0,
-      completed_today:   stats.completed_today   || 0,
-      month_imports:     stats.month_imports      || 0
+      id: bid, name: branch.name,
+      address: branch.address || '', phone: branch.phone || '',
+      total_products, total_stock_value, total_stock_units,
+      low_stock_items, pending_withdrawals, completed_today, month_imports
     };
   });
   return { success: true, data: result };
@@ -697,17 +809,16 @@ function getDashboardStats(p) {
   const stats = { total_products: 0, low_stock_items: 0, total_stock_value: 0, total_stock_units: 0,
     pending_withdrawals: 0, completed_today: 0, month_imports: 0, pending_imports: 0, total_recipients: 0 };
 
+  // Fix 5: use filterByBranch consistently (was inlining the same logic 4 times)
   const stockSheet = getSheet('Stock');
   if (stockSheet) {
-    let rows = sheetToObjects(stockSheet);
-    if (branchId) rows = rows.filter(function(r) { return String(r.branch_id || '') === String(branchId); });
-    // Aggregate lots per product_id
+    const rows = filterByBranch(sheetToObjects(stockSheet), branchId);
     const stockMap = {};
     rows.forEach(function(r) {
       const pid = String(r.product_id);
       const qty = parseFloat(r.quantity) || 0;
       if (!stockMap[pid]) stockMap[pid] = { quantity: 0, min_stock: parseFloat(r.min_stock) || 0, total_value: 0 };
-      stockMap[pid].quantity   += qty;
+      stockMap[pid].quantity    += qty;
       stockMap[pid].total_value += qty * (parseFloat(r.cost_price) || 0);
     });
     const aggregated = Object.values(stockMap);
@@ -719,8 +830,7 @@ function getDashboardStats(p) {
 
   const wSheet = getSheet('Withdrawals');
   if (wSheet) {
-    let rows = sheetToObjects(wSheet);
-    if (branchId) rows = rows.filter(function(r) { return String(r.branch_id || '') === String(branchId); });
+    const rows = filterByBranch(sheetToObjects(wSheet), branchId);
     stats.pending_withdrawals = rows.filter(r => r.status === 'pending').length;
     const todayStr = new Date().toDateString();
     stats.completed_today = rows.filter(r => r.status === 'completed' &&
@@ -729,8 +839,7 @@ function getDashboardStats(p) {
 
   const iSheet = getSheet('Imports');
   if (iSheet) {
-    let rows = sheetToObjects(iSheet);
-    if (branchId) rows = rows.filter(function(r) { return String(r.branch_id || '') === String(branchId); });
+    const rows = filterByBranch(sheetToObjects(iSheet), branchId);
     stats.pending_imports = rows.filter(r => r.status === 'pending').length;
     const m = new Date().getMonth(); const y = new Date().getFullYear();
     stats.month_imports = rows.filter(r => {
@@ -740,8 +849,7 @@ function getDashboardStats(p) {
 
   const rSheet = getSheet('Recipients');
   if (rSheet) {
-    let rows = sheetToObjects(rSheet);
-    if (branchId) rows = rows.filter(function(r) { return String(r.branch_id || '') === String(branchId); });
+    const rows = filterByBranch(sheetToObjects(rSheet), branchId);
     stats.total_recipients = rows.filter(r => r.status === 'active').length;
   }
 

@@ -60,9 +60,9 @@
   <!-- BRANCH OVERVIEW (superadmin only, hidden until loadBranchOverview runs) -->
   <div id="branch-overview-panel" class="panel mb-4 d-none">
     <div class="panel-header">
-      <div class="panel-title"><i class="fas fa-sitemap me-2" style="color:#6366f1"></i>ภาพรวมทุกสาขา</div>
+      <div class="panel-title"><i class="fas fa-sitemap me-2" style="color:#6366f1"></i><span data-i18n="page_branch_overview">ภาพรวมทุกสาขา</span></div>
       <button class="btn btn-sm btn-primary" onclick="openBranchModal()">
-        <i class="fas fa-plus me-1"></i>เพิ่มสาขา
+        <i class="fas fa-plus me-1"></i><span data-i18n="btn_add_branch">เพิ่มสาขา</span>
       </button>
     </div>
     <div class="panel-body">
@@ -148,29 +148,29 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="modalBranchLabel">เพิ่มสาขา</h5>
+        <h5 class="modal-title" id="modalBranchLabel" data-i18n="modal_add_branch">เพิ่มสาขา</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <form id="branch-form">
           <div class="mb-3">
-            <label class="form-label fw-semibold">ชื่อสาขา <span class="text-danger">*</span></label>
-            <input type="text" class="form-control" id="branch-name" placeholder="เช่น สาขากรุงเทพ" required>
+            <label class="form-label fw-semibold" data-i18n="lbl_branch_name">ชื่อสาขา</label> <span class="text-danger">*</span>
+            <input type="text" class="form-control" id="branch-name" data-i18n-placeholder="ph_branch_name" placeholder="เช่น สาขากรุงเทพ" required>
           </div>
           <div class="mb-3">
-            <label class="form-label fw-semibold">ที่อยู่</label>
-            <input type="text" class="form-control" id="branch-address" placeholder="ที่อยู่สาขา">
+            <label class="form-label fw-semibold" data-i18n="lbl_branch_address">ที่อยู่</label>
+            <input type="text" class="form-control" id="branch-address" data-i18n-placeholder="ph_branch_address" placeholder="ที่อยู่สาขา">
           </div>
           <div class="mb-3">
-            <label class="form-label fw-semibold">โทรศัพท์</label>
-            <input type="text" class="form-control" id="branch-phone" placeholder="เบอร์โทร">
+            <label class="form-label fw-semibold" data-i18n="lbl_branch_phone">โทรศัพท์</label>
+            <input type="text" class="form-control" id="branch-phone" data-i18n-placeholder="ph_phone" placeholder="เบอร์โทร">
           </div>
         </form>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="btn_cancel">ยกเลิก</button>
         <button type="button" class="btn btn-primary" id="btn-save-branch" onclick="saveBranch()">
-          <i class="fas fa-save me-1"></i>บันทึก
+          <i class="fas fa-save me-1"></i><span data-i18n="btn_save">บันทึก</span>
         </button>
       </div>
     </div>

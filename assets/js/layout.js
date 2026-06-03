@@ -3,8 +3,10 @@
 // ============================================================
 
 function initLayout(activePage) {
-  const isAdmin = Auth.isAdmin(); // อ่านจาก closure — ไม่ได้อ่านจาก sessionStorage
-  const _t = (typeof t === 'function') ? t : (k => k);
+  const isAdmin      = Auth.isAdmin();
+  const isSuperAdmin = typeof Auth.isSuperAdmin === 'function' ? Auth.isSuperAdmin() : false;
+  const user         = Auth.getUser();
+  const _t  = (typeof t === 'function') ? t : (k => k);
   const lang = (typeof I18n !== 'undefined') ? I18n.getLang() : 'th';
 
   const menuMain = isAdmin ? [
@@ -24,7 +26,7 @@ function initLayout(activePage) {
   const menuSettings = isAdmin ? [
     { key: 'report',   icon: 'fa-chart-bar',    label: _t('nav_report'),   url: '/dashboard/report/' },
     { key: 'products', icon: 'fa-tags',          label: _t('nav_products'), url: '/dashboard/products/' },
-    ...(isSuperAdmin ? [{ key: 'users', icon: 'fa-users-cog', label: 'ผู้ใช้งาน', url: '/dashboard/users/' }] : [])
+    ...(isSuperAdmin ? [{ key: 'users', icon: 'fa-users-cog', label: _t('nav_users'), url: '/dashboard/users/' }] : [])
   ] : [];
 
   function makeNavItems(items) {
@@ -35,8 +37,6 @@ function initLayout(activePage) {
   }
 
   const langBtnLabel = lang === 'th' ? 'EN' : 'ภาษาไทย';
-  const user = Auth.getUser();
-  const isSuperAdmin = typeof Auth.isSuperAdmin === 'function' ? Auth.isSuperAdmin() : false;
   const branchLabel = isSuperAdmin
     ? '<span class="sidebar-branch-badge superadmin"><i class="fas fa-sitemap me-1"></i>สาขาหลัก</span>'
     : user && user.branch_name
