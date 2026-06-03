@@ -104,10 +104,14 @@
               </select>
             </div>
             <div class="col-md-6" id="usr-branch-group">
-              <label class="form-label fw-semibold" data-i18n="lbl_branch">สาขา</label> <span class="text-danger">*</span>
+              <label class="form-label fw-semibold" data-i18n="lbl_branch">สาขา</label>
+              <span id="usr-branch-required" class="text-danger">*</span>
               <select class="form-select" id="usr-branch">
                 <option value="" data-i18n="select_branch">-- เลือกสาขา --</option>
               </select>
+              <div id="usr-branch-clear-hint" class="form-text text-warning d-none">
+                <i class="fas fa-exclamation-triangle me-1"></i>ไม่ระบุสาขา — user จะไม่เห็นข้อมูลใดเลยจนกว่าจะกำหนดสาขา
+              </div>
             </div>
             <div class="col-md-6" id="usr-status-group" style="display:none;">
               <label class="form-label fw-semibold" data-i18n="lbl_user_status">สถานะ</label>
@@ -210,10 +214,19 @@ function onRoleChange() {
   if (role === 'superadmin') {
     $('#usr-branch-group').hide();
     $('#usr-branch').val('');
+    $('#usr-branch-clear-hint').addClass('d-none');
   } else {
     $('#usr-branch-group').show();
+    _updateBranchHint();
   }
 }
+function _updateBranchHint() {
+  const isEmpty = !$('#usr-branch').val();
+  $('#usr-branch-clear-hint').toggleClass('d-none', !isEmpty || !!_editingUserId === false);
+  // asterisk * แดงแสดงเมื่อสร้างใหม่, ซ่อนเมื่อแก้ไข (branch optional)
+  $('#usr-branch-required').toggle(!_editingUserId);
+}
+$('#usr-branch').on('change', _updateBranchHint);
 
 function openAddUser() {
   _editingUserId = null;
@@ -221,6 +234,8 @@ function openAddUser() {
   $('#usr-branch').val('');
   $('#usr-role').val('staff');
   $('#usr-branch-group').show();
+  $('#usr-branch-clear-hint').addClass('d-none');
+  $('#usr-branch-required').show();  // required เมื่อสร้างใหม่
   $('#usr-status-group').hide();
   $('#usr-pw-required').show();
   $('#usr-pw-hint').addClass('d-none');
@@ -245,7 +260,9 @@ function openEditUser(id) {
     $('#usr-branch').val(u.branch_id || '');
     $('#usr-status').val(u.status || 'active');
     $('#usr-status-group').show();
+    $('#usr-branch-required').hide();  // ไม่บังคับเลือกสาขาตอน edit
     onRoleChange();
+    _updateBranchHint();
     $('#modalUserLabel').html(`<i class="fas fa-user-edit me-2"></i>${t('modal_edit_user')}`);
     new bootstrap.Modal('#modalUser').show();
   });
@@ -255,8 +272,10 @@ async function saveUser() {
   const role = $('#usr-role').val();
   const name = $('#usr-name').val().trim();
   if (!name) { showToast('กรุณากรอกชื่อ', 'warning'); return; }
-  if (role !== 'superadmin' && !$('#usr-branch').val()) {
-    showToast('กรุณาเลือกสาขา', 'warning'); return;
+  // สร้างใหม่: ต้องเลือกสาขาสำหรับ non-superadmin
+  // แก้ไข: ยอมให้ branch ว่างได้ (= ล้างสาขา)
+  if (!_editingUserId && role !== 'superadmin' && !$('#usr-branch').val()) {
+    showToast('กรุณาเลือกสาขาสำหรับ role ' + role, 'warning'); return;
   }
   const data = {
     name,

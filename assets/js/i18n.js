@@ -244,6 +244,7 @@ const I18n = (() => {
       lbl_user_status:     'สถานะ',
       opt_active:          'active – ใช้งาน',
       opt_inactive:        'inactive – ระงับ',
+      hint_no_branch:      'ไม่ระบุสาขา — user จะไม่เห็นข้อมูลใดเลยจนกว่าจะกำหนดสาขา',
     },
 
     en: {
@@ -485,6 +486,7 @@ const I18n = (() => {
       lbl_user_status:     'Status',
       opt_active:          'active – Active',
       opt_inactive:        'inactive – Suspended',
+      hint_no_branch:      'No branch set — user will see no data until a branch is assigned',
     }
   };
 
