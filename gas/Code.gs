@@ -19,11 +19,13 @@ function setupAllSheets() {
     'Stock':       ['id','product_id','product_name','product_code','unit','quantity','cost_price','min_stock','last_updated','branch_id'],
     'Imports':     ['id','order_date','supplier','items','yuan_amount','exchange_rate','base_cost_thb','freight_cost','import_costs','additional_costs','total_cost','status','notes','created_at','created_by','branch_id'],
     'Withdrawals': ['id','withdrawal_date','recipient_id','recipient_name','department','items','total_value','type','notes','status','created_by','created_at','branch_id'],
-    'Recipients':  ['id','name','department','position','phone','email','notes','status','created_at','branch_id']
+    'Recipients':  ['id','name','department','position','phone','email','notes','status','created_at','branch_id'],
+    'Expenses':    ['id','date','category','description','amount','branch_id','created_at','created_by'],
+    'ExpenseCategories': ['name']
   };
 
   // Sheets ที่ไม่ต้องมี branch_id
-  const NO_BRANCH_ID = new Set(['Tokens']);
+  const NO_BRANCH_ID = new Set(['Tokens', 'ExpenseCategories']);
 
   const log = [];
 
@@ -134,6 +136,15 @@ function processRequest(action, params, body) {
       case 'getUsers':               return getUsers(p);
       case 'addUser':                return addUser(p);
       case 'updateUser':             return updateUser(p);
+      case 'getStockImportHistory':  return getStockImportHistory(p);
+      case 'addImportExtraCost':     return addImportExtraCost(p);
+      case 'deleteImport':           return deleteImport(p);
+      case 'updateImport':           return updateImport(p);
+      case 'getExpenses':            return getExpenses(p);
+      case 'addExpense':             return addExpense(p);
+      case 'updateExpense':          return updateExpense(p);
+      case 'deleteExpense':          return deleteExpense(p);
+      case 'getExpenseCategories':   return getExpenseCategories();
       default: return { success: false, message: 'Unknown action: ' + action };
     }
   } catch (err) {
@@ -409,49 +420,189 @@ function revalueStock(productId, newCost) {
   addStockLot(productId, totalQty, newCost, branchId);
 }
 
-// getStock: aggregate all lots per product_id into one summary row (weighted avg cost)
+// getStock: quantity จาก Stock sheet + cost_price (weighted avg รวม extras) จาก Imports sheet
 function getStock(p) {
-  var sheet = getSheet('Stock');
-  if (!sheet) return { success: false, message: 'ไม่พบชีท Stock' };
+  var stockSheet = getSheet('Stock');
+  if (!stockSheet) return { success: false, message: 'ไม่พบชีท Stock' };
   var branchId = (p || {}).branch_id || '';
-  var rows = sheetToObjects(sheet);
-  if (branchId) rows = rows.filter(function(r) { return String(r.branch_id || '') === String(branchId); });
-  var map = {};
-  rows.forEach(function(r) {
+
+  // 1. รวม quantity + metadata จาก Stock lots
+  var stockRows = sheetToObjects(stockSheet);
+  if (branchId) stockRows = stockRows.filter(function(r) { return String(r.branch_id || '') === String(branchId); });
+  var qtyMap = {};
+  stockRows.forEach(function(r) {
     var pid = String(r.product_id);
     var qty = parseFloat(r.quantity) || 0;
-    var cost = parseFloat(r.cost_price) || 0;
-    if (!map[pid]) {
-      map[pid] = {
-        id: r.id,
-        product_id: pid,
-        product_name: r.product_name || '',
-        product_code: r.product_code || '',
-        min_stock: r.min_stock || 0,
-        unit: r.unit || '',
-        branch_id: r.branch_id || '',
-        quantity: 0,
-        cost_price: 0,
-        _total_value: 0,
-        last_updated: r.last_updated || ''
+    if (!qtyMap[pid]) {
+      qtyMap[pid] = {
+        product_id: pid, product_name: r.product_name || '',
+        product_code: r.product_code || '', unit: r.unit || '',
+        min_stock: parseFloat(r.min_stock) || 0, branch_id: r.branch_id || '',
+        quantity: 0, last_updated: r.last_updated || '',
+        _stock_value: 0  // fallback ถ้าไม่มีข้อมูล import
       };
     }
-    map[pid].quantity += qty;
-    map[pid]._total_value += qty * cost;
+    qtyMap[pid].quantity += qty;
+    qtyMap[pid]._stock_value += qty * (parseFloat(r.cost_price) || 0);
     var d1 = new Date(r.last_updated || 0);
-    var d2 = new Date(map[pid].last_updated || 0);
-    if (d1 > d2) map[pid].last_updated = r.last_updated;
+    var d2 = new Date(qtyMap[pid].last_updated || 0);
+    if (d1 > d2) qtyMap[pid].last_updated = r.last_updated;
   });
-  var result = Object.keys(map).map(function(pid) {
-    var p = map[pid];
-    p.cost_price = p.quantity > 0 ? p._total_value / p.quantity : 0;
-    delete p._total_value;
-    return p;
+
+  // 2. คำนวณ weighted avg cost (รวม freight + extras) จาก Imports ที่ received แล้ว
+  var costMap = {}; // product_id → { total_value, total_qty }
+  var importSheet = getSheet('Imports');
+  if (importSheet) {
+    var importRows = sheetToObjects(importSheet).filter(function(r) { return r.status === 'received'; });
+    if (branchId) importRows = importRows.filter(function(r) { return String(r.branch_id || '') === String(branchId); });
+    importRows.forEach(function(r) {
+      var items = [];
+      try { items = JSON.parse(r.items); } catch (_) {}
+      var totalQty = items.reduce(function(s, i) { return s + (parseFloat(i.quantity) || 0); }, 0);
+      var extraPerUnit = totalQty > 0
+        ? ((parseFloat(r.freight_cost) || 0) + (parseFloat(r.additional_costs) || 0)) / totalQty
+        : 0;
+      items.forEach(function(item) {
+        var pid = String(item.product_id);
+        var qty = parseFloat(item.quantity) || 0;
+        var fullCost = (parseFloat(item.unit_cost) || 0) + extraPerUnit;
+        if (!costMap[pid]) costMap[pid] = { total_value: 0, total_qty: 0 };
+        costMap[pid].total_value += qty * fullCost;
+        costMap[pid].total_qty  += qty;
+      });
+    });
+  }
+
+  // 3. Merge: quantity จาก Stock, cost_price จาก Imports (fallback: Stock lots)
+  var result = Object.keys(qtyMap).map(function(pid) {
+    var s = qtyMap[pid];
+    var c = costMap[pid];
+    var cost_price = (c && c.total_qty > 0)
+      ? c.total_value / c.total_qty
+      : (s.quantity > 0 ? s._stock_value / s.quantity : 0);
+    return {
+      product_id: pid, product_name: s.product_name, product_code: s.product_code,
+      unit: s.unit, min_stock: s.min_stock, branch_id: s.branch_id,
+      quantity: s.quantity, cost_price: cost_price, last_updated: s.last_updated
+    };
   });
+
   return { success: true, data: result };
 }
 
 // ---------- Imports (Purchase Orders) ----------
+// คืน import ทุกรายการที่มีสินค้านี้ เรียงจากใหม่ไปเก่า
+function getStockImportHistory(p) {
+  const sheet = getSheet('Imports');
+  if (!sheet) return { success: false, message: 'ไม่พบชีท Imports' };
+  const productId = String((p || {}).product_id || '');
+  const branchId  = (p || {}).branch_id || '';
+  if (!productId) return { success: false, message: 'ต้องระบุ product_id' };
+
+  let rows = sheetToObjects(sheet);
+  rows = filterByBranch(rows, branchId);
+
+  const result = [];
+  rows.forEach(function(r) {
+    var items = [];
+    try { items = JSON.parse(r.items); } catch (_) { items = []; }
+    var matchItem = items.find(function(it) { return String(it.product_id) === productId; });
+    if (!matchItem) return;
+
+    // คำนวณ extraPerUnit จาก record (freight + additional / จำนวนทุก item)
+    // ใช้ได้ทั้ง import เก่าและใหม่ เพราะ items.unit_cost เก็บแค่ฐาน (¥×rate) เสมอ
+    var totalQty = items.reduce(function(s, i) { return s + (parseFloat(i.quantity) || 0); }, 0);
+    var freight  = parseFloat(r.freight_cost || 0);
+    var addCosts = parseFloat(r.additional_costs || 0);
+    var extraPerUnit = (r.status === 'received' && totalQty > 0) ? (freight + addCosts) / totalQty : 0;
+
+    result.push({
+      import_id:  r.id,
+      order_date: r.order_date,
+      supplier:   r.supplier,
+      status:     r.status,
+      quantity:   parseFloat(matchItem.quantity) || 0,
+      unit_cost:  (parseFloat(matchItem.unit_cost || matchItem.cost_price) || 0) + extraPerUnit,
+      created_at: r.created_at
+    });
+  });
+
+  result.sort(function(a, b) {
+    return new Date(b.order_date || b.created_at) - new Date(a.order_date || a.created_at);
+  });
+
+  return { success: true, data: result };
+}
+
+// เพิ่มต้นทุนแฝงให้ล็อตสินค้าที่รับมาแล้ว — แจกจ่าย extraPerUnit ไปยัง stock lots ที่เหลือ
+function addImportExtraCost(p) {
+  var auth = requireAuth(p, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+
+  var importId  = String((p || {}).import_id  || '');
+  var productId = String((p || {}).product_id || '');
+  var amount    = parseFloat((p || {}).amount) || 0;
+  var note      = (p || {}).note || '';
+
+  if (!importId || !productId) return { success: false, message: 'ต้องระบุ import_id และ product_id' };
+  if (amount <= 0) return { success: false, message: 'ยอดเงินต้องมากกว่า 0' };
+
+  // ตรวจ import record
+  var impSheet = getSheet('Imports');
+  if (!impSheet) return { success: false, message: 'ไม่พบชีท Imports' };
+  var importRecord = sheetToObjects(impSheet).find(function(r) { return r.id === importId; });
+  if (!importRecord) return { success: false, message: 'ไม่พบรายการนำเข้า' };
+  if (importRecord.status !== 'received')
+    return { success: false, message: 'สามารถเพิ่มต้นทุนได้เฉพาะรายการที่รับสินค้าแล้ว (received)' };
+
+  // หาจำนวนต้นฉบับจาก items
+  var items = [];
+  try { items = JSON.parse(importRecord.items); } catch (_) {}
+  var matchItem = items.find(function(it) { return String(it.product_id) === productId; });
+  if (!matchItem) return { success: false, message: 'ไม่พบสินค้านี้ในรายการนำเข้า' };
+
+  var origQty = parseFloat(matchItem.quantity) || 0;
+  if (origQty <= 0) return { success: false, message: 'จำนวนสินค้าในล็อตนี้เป็น 0' };
+
+  var extraPerUnit = amount / origQty;
+
+  // อัพเดท cost_price ของ stock lots ที่ยังมีสินค้าเหลือ
+  var stockSheet = getSheet('Stock');
+  if (!stockSheet || stockSheet.getLastRow() < 2)
+    return { success: false, message: 'ไม่พบข้อมูลสต็อค' };
+
+  var stockHdrs  = stockSheet.getRange(1, 1, 1, stockSheet.getLastColumn()).getValues()[0];
+  var costCol    = stockHdrs.indexOf('cost_price') + 1;
+  var updatedCol = stockHdrs.indexOf('last_updated') + 1;
+  if (costCol === 0) return { success: false, message: 'ไม่พบคอลัมน์ cost_price ใน Stock' };
+
+  var stockRows    = sheetToObjects(stockSheet);
+  var updatedLots  = 0;
+  var updatedUnits = 0;
+
+  stockRows.forEach(function(row, i) {
+    if (String(row.product_id) !== productId) return;
+    var qty = parseFloat(row.quantity) || 0;
+    if (qty <= 0) return; // ล็อตที่ถูกเบิกหมดแล้ว
+    var newCost = (parseFloat(row.cost_price) || 0) + extraPerUnit;
+    stockSheet.getRange(i + 2, costCol).setValue(newCost);
+    if (updatedCol > 0) stockSheet.getRange(i + 2, updatedCol).setValue(now());
+    updatedLots++;
+    updatedUnits += qty;
+  });
+
+  if (updatedLots === 0)
+    return { success: false, message: 'สินค้านี้ถูกเบิกออกหมดแล้ว ไม่มีสต็อคคงเหลือที่จะอัพเดท' };
+
+  return {
+    success: true,
+    updated_lots: updatedLots,
+    updated_units: updatedUnits,
+    extra_per_unit: extraPerUnit,
+    message: 'อัพเดทต้นทุนสำเร็จ ' + updatedLots + ' ล็อต (+' + extraPerUnit.toFixed(2) + ' ฿/ชิ้น)'
+  };
+}
+
 function getImports(p) {
   const sheet = getSheet('Imports');
   if (!sheet) return { success: false };
@@ -493,20 +644,98 @@ function addImport(data) {
   return { success: true, id, total_cost: total, message: 'บันทึกการสั่งซื้อสำเร็จ' };
 }
 
+function deleteImport(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  const sheet = getSheet('Imports');
+  if (!sheet) return { success: false };
+  const rows = sheetToObjects(sheet);
+  const idx  = rows.findIndex(function(r) { return r.id === data.id; });
+  if (idx === -1) return { success: false, message: 'ไม่พบรายการ' };
+  if (rows[idx].status === 'received') return { success: false, message: 'ไม่สามารถลบรายการที่รับสินค้าแล้ว' };
+  sheet.deleteRow(idx + 2);
+  return { success: true, message: 'ลบรายการสำเร็จ' };
+}
+
+function updateImport(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  const sheet = getSheet('Imports');
+  if (!sheet) return { success: false };
+  const rows   = sheetToObjects(sheet);
+  const record = rows.find(function(r) { return r.id === data.id; });
+  if (!record) return { success: false, message: 'ไม่พบรายการ' };
+  if (record.status === 'received') return { success: false, message: 'ไม่สามารถแก้ไขรายการที่รับสินค้าแล้ว' };
+  const rate    = parseFloat(data.exchange_rate) || parseFloat(record.exchange_rate) || 1;
+  const items   = (data.items || []).map(function(item) {
+    return { product_id: item.product_id, product_name: item.product_name,
+             quantity: item.quantity, unit_price_yuan: item.unit_price_yuan,
+             unit_cost: (parseFloat(item.unit_price_yuan) || 0) * rate };
+  });
+  const yuanAmt = (data.items || []).reduce(function(s, i) {
+    return s + (parseFloat(i.unit_price_yuan) || 0) * (parseFloat(i.quantity) || 0);
+  }, 0);
+  const baseTHB = yuanAmt * rate;
+  updateRow(sheet, data.id, {
+    supplier:      data.supplier,
+    order_date:    data.order_date,
+    exchange_rate: rate,
+    yuan_amount:   yuanAmt,
+    base_cost_thb: baseTHB,
+    total_cost:    baseTHB,
+    items:         JSON.stringify(items),
+    notes:         data.notes !== undefined ? data.notes : (record.notes || '')
+  });
+  return { success: true, message: 'อัพเดทรายการสำเร็จ' };
+}
+
 function updateImportStatus(data) {
   const sheet = getSheet('Imports');
   if (!sheet) return { success: false };
   const rows   = sheetToObjects(sheet);
   const record = rows.find(r => r.id === data.id);
   if (!record) return { success: false, message: 'ไม่พบการสั่งซื้อ' };
+
   const updates = { status: data.status };
-  if (data.import_costs) updates.import_costs = JSON.stringify(data.import_costs);
+
+  if (data.import_costs) {
+    const costs   = data.import_costs;
+    const addCosts = (parseFloat(costs.customs_duty)  || 0) +
+                     (parseFloat(costs.clearance_fee) || 0) +
+                     (parseFloat(costs.transport_fee) || 0) +
+                     (parseFloat(costs.warehouse_fee) || 0) +
+                     (parseFloat(costs.vat)           || 0);
+    updates.import_costs     = JSON.stringify(costs);
+    updates.additional_costs = addCosts;
+
+    const baseTHB   = parseFloat(record.base_cost_thb) || 0;
+    const newFreight = data.freight_cost !== undefined
+      ? (parseFloat(data.freight_cost) || 0)
+      : (parseFloat(record.freight_cost) || 0);
+    if (data.freight_cost !== undefined) updates.freight_cost = newFreight;
+    updates.total_cost = baseTHB + newFreight + addCosts;
+  }
+
   updateRow(sheet, data.id, updates);
+
   if (data.status === 'received') {
     let items = [];
     try { items = JSON.parse(record.items); } catch (_) {}
     const branchId = record.branch_id || '';
-    items.forEach(function(item) { addStockLot(item.product_id, parseFloat(item.quantity), parseFloat(item.unit_cost), branchId); });
+
+    // กระจายต้นทุนนำเข้า (freight + customs + clearance + transport + warehouse + vat)
+    // หารเท่าๆ กันต่อชิ้น ทุก item ในล็อตนี้
+    const freight  = parseFloat(updates.freight_cost      !== undefined ? updates.freight_cost      : record.freight_cost)      || 0;
+    const addCosts = parseFloat(updates.additional_costs  !== undefined ? updates.additional_costs  : record.additional_costs)  || 0;
+    const totalQty = items.reduce(function(s, i) { return s + (parseFloat(i.quantity) || 0); }, 0);
+    const extraPerUnit = totalQty > 0 ? (freight + addCosts) / totalQty : 0;
+
+    // items JSON เก็บ unit_cost ฐาน (¥×rate) เสมอ ไม่แตะ
+    // stock lot ได้ต้นทุนเต็ม (รวม extras) ตอน addStockLot
+    items.forEach(function(item) {
+      const unitCost = (parseFloat(item.unit_cost) || 0) + extraPerUnit;
+      addStockLot(item.product_id, parseFloat(item.quantity), unitCost, branchId);
+    });
   }
   return { success: true, message: 'อัพเดทสถานะสำเร็จ' };
 }
@@ -894,5 +1123,83 @@ function getMonthlyReport(params) {
     report.totals.total_stock_value = rows.reduce((s, r) =>
       s + parseFloat(r.quantity) * parseFloat(r.cost_price), 0);
   }
+
+  const expSheet = getSheet('Expenses');
+  report.expenses = [];
+  report.totals.total_expenses = 0;
+  if (expSheet) {
+    let rows = sheetToObjects(expSheet);
+    if (branchId) rows = rows.filter(function(r) { return String(r.branch_id || '') === String(branchId); });
+    report.expenses = rows.filter(function(r) {
+      const d = new Date(r.date);
+      return d.getMonth() === month && d.getFullYear() === year;
+    });
+    report.totals.total_expenses = report.expenses.reduce(function(s, r) { return s + (parseFloat(r.amount) || 0); }, 0);
+  }
+
   return { success: true, data: report };
+}
+
+// ---------- Expenses ----------
+function getExpenses(p) {
+  var sheet = getSheet('Expenses');
+  if (!sheet) return { success: false, message: 'ไม่พบชีท Expenses' };
+  var branchId = (p || {}).branch_id || '';
+  var month    = parseInt((p || {}).month);
+  var year     = parseInt((p || {}).year);
+  var rows     = sheetToObjects(sheet);
+  rows = filterByBranch(rows, branchId);
+  if (!isNaN(month) && !isNaN(year)) {
+    rows = rows.filter(function(r) {
+      var d = new Date(r.date);
+      return d.getMonth() === month - 1 && d.getFullYear() === year;
+    });
+  }
+  return { success: true, data: rows };
+}
+
+function addExpense(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Expenses');
+  if (!sheet) return { success: false, message: 'ไม่พบชีท Expenses กรุณารัน setupAllSheets() ก่อน' };
+  var id       = uid('EXP');
+  var branchId = data.branch_id || auth.user.branch_id || '';
+  sheet.appendRow([id, data.date || now().split('T')[0], data.category || '',
+    data.description || '', parseFloat(data.amount) || 0, branchId, now(), auth.user.username || '']);
+  return { success: true, id, message: 'บันทึกค่าใช้จ่ายสำเร็จ' };
+}
+
+function updateExpense(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Expenses');
+  if (!sheet) return { success: false };
+  var ok = updateRow(sheet, data.id, {
+    date:        data.date,
+    category:    data.category,
+    description: data.description,
+    amount:      parseFloat(data.amount) || 0
+  });
+  return { success: ok, message: ok ? 'อัพเดทสำเร็จ' : 'ไม่พบรายการ' };
+}
+
+function deleteExpense(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Expenses');
+  if (!sheet) return { success: false };
+  var rows = sheetToObjects(sheet);
+  var idx  = rows.findIndex(function(r) { return r.id === data.id; });
+  if (idx === -1) return { success: false, message: 'ไม่พบรายการ' };
+  sheet.deleteRow(idx + 2);
+  return { success: true, message: 'ลบรายการสำเร็จ' };
+}
+
+function getExpenseCategories() {
+  var sheet = getSheet('ExpenseCategories');
+  if (!sheet) return { success: true, data: [] };
+  var rows = sheetToObjects(sheet);
+  var names = rows.map(function(r) { return String(r.name || '').trim(); }).filter(Boolean);
+  return { success: true, data: names };
 }

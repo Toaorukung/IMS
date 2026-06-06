@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ค่าใช้จ่ายรายเดือน – ระบบเบิกสินค้าและจัดการคลังสินค้า (Inventory Management System)</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <link rel="stylesheet" href="../../assets/css/style.css">
+</head>
+<body data-page="expenses">
+<div id="wrapper">
+
+<nav id="sidebar"></nav>
+
+<div id="main-content">
+  <div id="topbar">
+    <div class="d-flex align-items-center gap-3">
+      <button id="sidebar-toggle" class="btn btn-sm btn-outline-secondary d-lg-none"><i class="fas fa-bars"></i></button>
+      <div class="topbar-title" id="topbar-title">ค่าใช้จ่ายรายเดือน</div>
+    </div>
+    <div class="topbar-actions">
+      <a href="/dashboard/home/" class="btn btn-sm btn-outline-secondary" title="หน้าหลัก"><i class="fas fa-home"></i></a>
+      <button id="btn-logout" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt me-1"></i>ออกจากระบบ</button>
+    </div>
+  </div>
+
+  <div class="page-body">
+  <div class="section-header mb-3">
+    <div class="section-header-title"><i class="fas fa-receipt me-2 text-primary"></i>ค่าใช้จ่ายรายเดือน</div>
+    <button class="btn btn-primary" onclick="openAddExpenseModal()"><i class="fas fa-plus me-1"></i>เพิ่มค่าใช้จ่าย</button>
+  </div>
+
+  <div class="panel mb-3">
+    <div class="panel-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-sm-3">
+          <label class="form-label">เดือน</label>
+          <select class="form-select" id="exp-filter-month">
+            <option value="1">มกราคม</option><option value="2">กุมภาพันธ์</option>
+            <option value="3">มีนาคม</option><option value="4">เมษายน</option>
+            <option value="5">พฤษภาคม</option><option value="6">มิถุนายน</option>
+            <option value="7">กรกฎาคม</option><option value="8">สิงหาคม</option>
+            <option value="9">กันยายน</option><option value="10">ตุลาคม</option>
+            <option value="11">พฤศจิกายน</option><option value="12">ธันวาคม</option>
+          </select>
+        </div>
+        <div class="col-sm-3">
+          <label class="form-label">ปี (ค.ศ.)</label>
+          <input type="number" class="form-control" id="exp-filter-year" min="2020" max="2099">
+        </div>
+        <div class="col-sm-3">
+          <button class="btn btn-outline-primary" onclick="loadExpenses()"><i class="fas fa-search me-1"></i>ค้นหา</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="table-responsive">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>วันที่</th>
+            <th>หมวดหมู่</th>
+            <th>รายละเอียด</th>
+            <th class="text-end">จำนวนเงิน (฿)</th>
+            <th>บันทึกโดย</th>
+            <th>จัดการ</th>
+          </tr>
+        </thead>
+        <tbody id="expenses-table-body">
+          <tr><td colspan="6" class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>
+        </tbody>
+        <tfoot>
+          <tr class="table-light fw-bold">
+            <td colspan="3" class="text-end">รวมทั้งหมด</td>
+            <td class="text-end" id="exp-total">฿0.00</td>
+            <td colspan="2"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  </div><!-- end .page-body -->
+</div><!-- end #main-content -->
+</div><!-- end #wrapper -->
+
+<div id="toast-container"></div>
+
+<!-- MODAL: เพิ่ม/แก้ไขค่าใช้จ่าย -->
+<div class="modal fade" id="modalExpense" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalExpenseLabel"><i class="fas fa-receipt me-2"></i>เพิ่มค่าใช้จ่าย</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="expense-form">
+          <div class="mb-3">
+            <label class="form-label">วันที่ <span class="text-danger">*</span></label>
+            <input type="date" class="form-control" id="exp-date">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">หมวดหมู่ <span class="text-danger">*</span></label>
+            <select class="form-select" id="exp-category">
+              <option value="">-- เลือกหมวดหมู่ --</option>
+            </select>
+            <div class="form-text text-muted">จัดการหมวดหมู่ได้ที่ Google Sheet ชื่อ <strong>ExpenseCategories</strong> (คอลัมน์ <code>name</code>)</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">รายละเอียด</label>
+            <input type="text" class="form-control" id="exp-description" placeholder="รายละเอียดเพิ่มเติม...">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">จำนวนเงิน (฿) <span class="text-danger">*</span></label>
+            <input type="number" class="form-control" id="exp-amount" min="0" step="0.01" placeholder="0.00">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-primary" id="btn-save-expense" onclick="saveExpense()"><i class="fas fa-save me-1"></i>บันทึก</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../../assets/js/config.js"></script>
+<script src="../../assets/js/i18n.js"></script>
+<script src="../../assets/js/api.js"></script>
+<script src="../../assets/js/layout.js"></script>
+<script src="../../assets/js/app.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const today = new Date();
+  document.getElementById('exp-filter-month').value = today.getMonth() + 1;
+  document.getElementById('exp-filter-year').value  = today.getFullYear();
+  document.getElementById('exp-date').value = today.toISOString().split('T')[0];
+});
+</script>
+</body>
+</html>

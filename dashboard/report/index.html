@@ -75,10 +75,19 @@
     </div>
     <!-- Profit summary row -->
     <div class="row g-3 mb-4">
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon blue"><i class="fas fa-tags"></i></div><div class="stat-value small" id="rpt-stat-revenue">-</div><div class="stat-label" data-i18n="rpt_stat_revenue">รายได้จากเบิก (ราคาขาย)</div></div></div>
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon red"><i class="fas fa-box-open"></i></div><div class="stat-value small" id="rpt-stat-cogs">-</div><div class="stat-label" data-i18n="rpt_stat_cogs">ต้นทุนสินค้าที่เบิก</div></div></div>
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon green"><i class="fas fa-chart-line"></i></div><div class="stat-value small" id="rpt-stat-profit">-</div><div class="stat-label" data-i18n="rpt_stat_profit">กำไรขั้นต้น</div></div></div>
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon teal"><i class="fas fa-percentage"></i></div><div class="stat-value" id="rpt-stat-margin">-</div><div class="stat-label" data-i18n="rpt_stat_margin">Gross Margin</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon blue"><i class="fas fa-tags"></i></div><div class="stat-value small" id="rpt-stat-revenue">-</div><div class="stat-label">รายได้จากเบิก (ราคาขาย)</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon red"><i class="fas fa-box-open"></i></div><div class="stat-value small" id="rpt-stat-cogs">-</div><div class="stat-label">ต้นทุนสินค้าที่เบิก</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon green"><i class="fas fa-chart-line"></i></div><div class="stat-value small" id="rpt-stat-profit">-</div><div class="stat-label">กำไรขั้นต้น</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon teal"><i class="fas fa-percentage"></i></div><div class="stat-value" id="rpt-stat-margin">-</div><div class="stat-label">Gross Margin</div></div></div>
+    </div>
+    <!-- Net profit row (after expenses) -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon red"><i class="fas fa-receipt"></i></div><div class="stat-value small" id="rpt-stat-expenses">-</div><div class="stat-label">ค่าใช้จ่ายรายเดือน</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon green"><i class="fas fa-hand-holding-usd"></i></div><div class="stat-value small" id="rpt-stat-net-profit">-</div><div class="stat-label">กำไรสุทธิ (หลังหักค่าใช้จ่าย)</div></div></div>
+      <div class="col-6 col-md-3"></div>
+      <div class="col-6 col-md-3 d-flex align-items-center justify-content-end">
+        <a href="/dashboard/expenses/" class="btn btn-outline-primary btn-sm"><i class="fas fa-receipt me-1"></i>จัดการค่าใช้จ่าย</a>
+      </div>
     </div>
     <div class="panel mb-4">
       <div class="panel-header"><div class="panel-title"><i class="fas fa-ship me-2"></i>รายการสั่งซื้อ/นำเข้า</div></div>
@@ -95,6 +104,15 @@
         <table class="table">
           <thead><tr><th>รหัส</th><th>วันที่</th><th>ผู้รับ</th><th>แผนก</th><th class="text-end">มูลค่า</th><th>สถานะ</th></tr></thead>
           <tbody id="rpt-wd-body"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel mb-4">
+      <div class="panel-header"><div class="panel-title"><i class="fas fa-receipt me-2 text-danger"></i>ค่าใช้จ่ายรายเดือน</div></div>
+      <div class="table-responsive">
+        <table class="table">
+          <thead><tr><th>วันที่</th><th>หมวดหมู่</th><th>รายละเอียด</th><th class="text-end">จำนวนเงิน (฿)</th></tr></thead>
+          <tbody id="rpt-expenses-body"></tbody>
         </table>
       </div>
     </div>

@@ -88,10 +88,12 @@ $(document).ready(async function () {
     case 'home':       loadDashboard();  break;
     case 'purchase':   loadPurchase();   if (urlParams.get('new') === '1') setTimeout(openPurchaseModal, 600); break;
     case 'receive':    loadReceive();    break;
-    case 'stock':      loadStock();      break;
+    case 'stock':         loadStock();              break;
+    case 'stock-imports': loadStockImportHistory(); break;
     case 'withdrawal': loadWithdrawal(); if (urlParams.get('new') === '1') setTimeout(openWithdrawalModal, 600); break;
     case 'recipients': loadRecipients(); break;
     case 'report':     initReports();    break;
+    case 'expenses':   loadExpenses();   break;
     case 'products':   loadProducts();   break;
     case 'users':      /* handled by inline script in users/index.html */ break;
   }
@@ -119,6 +121,7 @@ function loadSection(name) {
     withdrawal: '/dashboard/withdrawal/',
     recipients: '/dashboard/recipients/',
     reports:    '/dashboard/report/',
+    expenses:   '/dashboard/expenses/',
     products:   '/dashboard/products/'
   };
   if (urls[name]) window.location.href = urls[name];
@@ -141,6 +144,18 @@ function showToast(msg, type = 'success') {
 function showLoading(sel) {
   $(sel + ' .section-data').html(`<div class="loading-overlay">
     <div class="spinner-border text-primary me-3"></div><span>กำลังโหลดข้อมูล...</span></div>`);
+}
+
+/**
+ * ป้องกันกดซ้ำ — disable ปุ่ม + แสดง spinner ระหว่าง async fn
+ * @param {string|jQuery} selector  — ปุ่มที่ต้องการล็อค
+ * @param {string}        restoreHtml — HTML ที่จะ restore หลัง fn เสร็จ
+ * @param {Function}      fn          — async function ที่ต้องการรัน
+ */
+async function withBtnLoading(selector, restoreHtml, fn) {
+  const $btn = $(selector);
+  $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');
+  try { await fn(); } finally { $btn.prop('disabled', false).html(restoreHtml); }
 }
 
 /* ===== CONFIRM DIALOG ===== */
@@ -396,17 +411,51 @@ $(document).on('click', '.purchase-filter', function () {
   renderPurchaseTable(App.imports);
 });
 
-function openPurchaseModal() {
-  App.editingId = null;
+async function openPurchaseModal(record = null) {
+  App.editingId = record ? record.id : null;
   $('#po-form')[0].reset();
-  $('#po-exchange-rate').val(CONFIG.EXCHANGE_RATE_DEFAULT);
-  $('#rate-hint').html('<i class="fas fa-circle-notch fa-spin me-1"></i>กำลังโหลดอัตราปัจจุบัน...');
   $('#po-items-container').html('');
-  addPoItem();
-  calcPoTotal();
-  $('#modalPurchaseLabel').text('สร้างรายการสั่งซื้อใหม่');
+  $('#modalPurchaseLabel').html(record
+    ? '<i class="fas fa-edit me-2"></i>แก้ไขรายการสั่งซื้อ'
+    : '<i class="fas fa-shopping-cart me-2"></i>' + t('modal_po_title'));
   new bootstrap.Modal('#modalPurchase').show();
-  fetchLiveRate();
+
+  if (!App.products.length) {
+    $('#po-items-container').html(
+      '<div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลดรายการสินค้า...</div>'
+    );
+    try {
+      const res = await API.getProducts();
+      if (res.success) { App.products = res.data || []; }
+    } catch (_) {}
+    $('#po-items-container').html('');
+  }
+
+  if (record) {
+    // Edit mode — pre-fill from saved record
+    $('#po-supplier').val(record.supplier || '');
+    $('#po-order-date').val(record.order_date ? record.order_date.split('T')[0] : '');
+    $('#po-exchange-rate').val(record.exchange_rate || CONFIG.EXCHANGE_RATE_DEFAULT);
+    $('#po-notes').val(record.notes || '');
+    $('#rate-hint').html('<i class="fas fa-info-circle text-primary me-1"></i>อัตราที่บันทึกไว้ตอนสั่งซื้อ');
+    const items = Array.isArray(record.items) ? record.items : [];
+    items.forEach(function(item) {
+      addPoItem();
+      const $row = $('#po-items-container .item-row').last();
+      $row.find('.po-product-select').val(item.product_id);
+      $row.find('.po-qty').val(item.quantity);
+      $row.find('.po-unit-price').val(item.unit_price_yuan || 0);
+    });
+    if (!items.length) addPoItem();
+  } else {
+    // Create mode
+    $('#po-exchange-rate').val(CONFIG.EXCHANGE_RATE_DEFAULT);
+    $('#rate-hint').html('<i class="fas fa-circle-notch fa-spin me-1"></i>กำลังโหลดอัตราปัจจุบัน...');
+    addPoItem();
+    fetchLiveRate();
+  }
+
+  calcPoTotal();
 }
 
 /* ===== LIVE EXCHANGE RATE FETCH ===== */
@@ -452,12 +501,12 @@ async function fetchLiveRate() {
 function addPoItem() {
   const id = Date.now();
   const prodOpts = App.products.map(p =>
-    `<option value="${p.id}" data-name="${p.name}" data-unit="${p.unit}">${p.name}</option>`).join('');
+    `<option value="${p.id}" data-name="${p.name}" data-unit="${p.unit}" data-cost="${p.cost_price || 0}">${p.name}</option>`).join('');
   const html = `<div class="item-row" id="poi-${id}">
     <div class="row g-2 align-items-end">
       <div class="col-md-5">
         <label class="form-label small mb-1">สินค้า</label>
-        <select class="form-select form-select-sm po-product-select" onchange="calcPoTotal()">
+        <select class="form-select form-select-sm po-product-select" onchange="onPoProductChange(this)">
           <option value="">-- เลือกสินค้า --</option>${prodOpts}</select>
       </div>
       <div class="col-md-2">
@@ -481,6 +530,14 @@ function addPoItem() {
   $('#po-items-container').append(html);
 }
 
+function onPoProductChange(sel) {
+  const cost = parseFloat($(sel).find(':selected').data('cost')) || 0;
+  const rate  = parseFloat($('#po-exchange-rate').val()) || 1;
+  const row   = $(sel).closest('.item-row');
+  if (cost > 0) row.find('.po-unit-price').val((cost / rate).toFixed(2));
+  calcPoTotal();
+}
+
 function calcPoTotal() {
   let totalYuan = 0;
   $('#po-items-container .item-row').each(function () {
@@ -490,15 +547,13 @@ function calcPoTotal() {
     $(this).find('.po-subtotal').val(sub.toFixed(2));
     totalYuan += sub;
   });
-  const rate     = parseFloat($('#po-exchange-rate').val()) || 1;
-  const freight  = parseFloat($('#po-freight').val()) || 0;
-  const baseTHB  = totalYuan * rate;
+  const rate    = parseFloat($('#po-exchange-rate').val()) || 1;
+  const baseTHB = totalYuan * rate;
   $('#po-total-yuan').text(Fmt.yuan(totalYuan));
   $('#po-base-thb').text(Fmt.currency(baseTHB));
-  $('#po-total-thb').text(Fmt.currency(baseTHB + freight));
 }
 
-$('#po-exchange-rate, #po-freight').on('input', calcPoTotal);
+$('#po-exchange-rate').on('input', calcPoTotal);
 
 async function savePurchaseOrder() {
   const supplier = $('#po-supplier').val().trim();
@@ -520,18 +575,21 @@ async function savePurchaseOrder() {
     supplier, order_date: orderDate,
     yuan_amount:   parseFloat($('#po-total-yuan').text().replace('¥', '').replace(/,/g, '')) || 0,
     exchange_rate: parseFloat($('#po-exchange-rate').val()) || 1,
-    freight_cost:  parseFloat($('#po-freight').val()) || 0,
+    freight_cost:  0,
     status: 'pending', items, notes: $('#po-notes').val(),
     created_by: App.user.name
   };
 
   $('#btn-save-po').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');
   try {
-    const res = await API.addImport(payload);
+    const res = App.editingId
+      ? await API.updateImport({ id: App.editingId, ...payload })
+      : await API.addImport(payload);
     if (res.success) {
-      showToast('บันทึกรายการสั่งซื้อสำเร็จ!', 'success');
+      showToast(App.editingId ? 'แก้ไขรายการสำเร็จ!' : 'บันทึกรายการสั่งซื้อสำเร็จ!', 'success');
       bootstrap.Modal.getOrCreateInstance('#modalPurchase').hide();
-      loadPurchase();
+      App.imports = [];
+      document.body.dataset.page === 'receive' ? loadReceive() : loadPurchase();
     } else throw new Error(res.message);
   } catch (e) {
     showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger');
@@ -571,6 +629,27 @@ function viewImport(id) {
   new bootstrap.Modal('#modalViewImport').show();
 }
 
+function editImport(id) {
+  const rec = App.imports.find(r => r.id === id);
+  if (!rec) return;
+  openPurchaseModal(rec);
+}
+
+async function deleteImportConfirm(id) {
+  const rec = App.imports.find(r => r.id === id);
+  if (!rec) return;
+  confirmAction(`ลบรายการสั่งซื้อ ${id} (${rec.supplier || '-'}) ?\nการลบไม่สามารถกู้คืนได้`, async () => {
+    try {
+      const res = await API.deleteImport(id);
+      if (res.success) {
+        showToast('ลบรายการสำเร็จ', 'success');
+        App.imports = [];
+        document.body.dataset.page === 'receive' ? loadReceive() : loadPurchase();
+      } else throw new Error(res.message);
+    } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
+  });
+}
+
 async function markReceived(id) {
   const rec = App.imports.find(r => r.id === id);
   if (!rec) return;
@@ -580,8 +659,8 @@ async function markReceived(id) {
   const items = Array.isArray(rec.items) ? rec.items : [];
   // Cost calc
   const baseTHB = (parseFloat(rec.yuan_amount || 0)) * (parseFloat(rec.exchange_rate || 1));
-  const freight = parseFloat(rec.freight_cost || 0);
-  $('#rc-base-thb').text(Fmt.currency(baseTHB + freight));
+  $('#rc-base-thb').text(Fmt.currency(baseTHB));
+  $('#rc-freight').val('0');
   ['customs_duty', 'clearance_fee', 'transport_fee', 'warehouse_fee', 'vat'].forEach(k => $(`#rc-${k}`).val('0'));
   calcReceiveCost();
   new bootstrap.Modal('#modalReceive').show();
@@ -589,16 +668,19 @@ async function markReceived(id) {
 
 function calcReceiveCost() {
   const keys = ['customs_duty', 'clearance_fee', 'transport_fee', 'warehouse_fee', 'vat'];
-  const base = parseFloat(($('#rc-base-thb').text() || '0').replace(/[฿,]/g, '')) || 0;
+  const base    = parseFloat(($('#rc-base-thb').text() || '0').replace(/[฿,]/g, '')) || 0;
+  const freight = parseFloat($('#rc-freight').val()) || 0;
   let addCost = 0;
   keys.forEach(k => { addCost += parseFloat($(`#rc-${k}`).val()) || 0; });
+  $('#rc-freight-display').text(Fmt.currency(freight));
   $('#rc-add-cost').text(Fmt.currency(addCost));
-  $('#rc-total-cost').text(Fmt.currency(base + addCost));
+  $('#rc-total-cost').text(Fmt.currency(base + freight + addCost));
 }
-$('#rc-customs_duty, #rc-clearance_fee, #rc-transport_fee, #rc-warehouse_fee, #rc-vat').on('input', calcReceiveCost);
+$('#rc-freight, #rc-customs_duty, #rc-clearance_fee, #rc-transport_fee, #rc-warehouse_fee, #rc-vat').on('input', calcReceiveCost);
 
 async function confirmReceived() {
-  const id = $('#rc-po-id').val();
+  const id           = $('#rc-po-id').val();
+  const freight_cost = parseFloat($('#rc-freight').val()) || 0;
   const import_costs = {
     customs_duty:   parseFloat($('#rc-customs_duty').val()) || 0,
     clearance_fee:  parseFloat($('#rc-clearance_fee').val()) || 0,
@@ -608,7 +690,7 @@ async function confirmReceived() {
   };
   $('#btn-confirm-receive').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');
   try {
-    const res = await API.updateImportStatus(id, 'received', import_costs);
+    const res = await API.updateImportStatus(id, 'received', import_costs, freight_cost);
     if (res.success) {
       showToast('รับสินค้าและอัพเดทสต็อคสำเร็จ!', 'success');
       bootstrap.Modal.getOrCreateInstance('#modalReceive').hide();
@@ -630,7 +712,7 @@ async function loadReceive() {
       const res = await API.getImports();
       if (res.success) App.imports = res.data || [];
     }
-    const pending = App.imports.filter(r => r.status !== 'received');
+    const pending = App.imports.filter(r => r.status !== 'received' && r.status !== 'cancelled');
     if (!pending.length) {
       $('#receive-list').html('<div class="text-center text-muted py-5"><i class="fas fa-check-circle fa-3x mb-3 text-success"></i><p>ไม่มีรายการรอรับสินค้า</p></div>');
       return;
@@ -642,13 +724,19 @@ async function loadReceive() {
           <div><span class="fw-bold">${r.id}</span> – ${r.supplier || '-'}
             <span class="ms-2">${Fmt.statusBadge(r.status)}</span>
           </div>
-          <button class="btn btn-sm btn-success" onclick="markReceived('${r.id}')"><i class="fas fa-check me-1"></i>${t('btn_receive')}</button>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-secondary" onclick="viewImport('${r.id}')"><i class="fas fa-eye me-1"></i>รายละเอียด</button>
+            <button class="btn btn-sm btn-outline-primary" onclick="editImport('${r.id}')"><i class="fas fa-edit me-1"></i>แก้ไข</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="deleteImportConfirm('${r.id}')"><i class="fas fa-trash me-1"></i>ลบ</button>
+            <button class="btn btn-sm btn-success" onclick="markReceived('${r.id}')"><i class="fas fa-check me-1"></i>${t('btn_receive')}</button>
+          </div>
         </div>
         <div class="panel-body">
           <div class="row g-3">
-            <div class="col-sm-4"><small class="text-muted d-block">วันที่สั่งซื้อ</small>${Fmt.date(r.order_date)}</div>
-            <div class="col-sm-4"><small class="text-muted d-block">ราคาสินค้า</small>${Fmt.yuan(r.yuan_amount)} (${Fmt.currency(r.base_cost_thb)})</div>
-            <div class="col-sm-4"><small class="text-muted d-block">ต้นทุนรวม</small>${Fmt.currency(r.total_cost)}</div>
+            <div class="col-6 col-sm-3"><small class="text-muted d-block">วันที่สั่งซื้อ</small>${Fmt.date(r.order_date)}</div>
+            <div class="col-6 col-sm-3"><small class="text-muted d-block">อัตราแลกเปลี่ยน</small><span class="fw-semibold">${r.exchange_rate}</span> <small class="text-muted">฿/¥</small></div>
+            <div class="col-6 col-sm-3"><small class="text-muted d-block">ราคาสินค้า</small>${Fmt.yuan(r.yuan_amount)} <small class="text-muted">(${Fmt.currency(r.base_cost_thb)})</small></div>
+            <div class="col-6 col-sm-3"><small class="text-muted d-block">ต้นทุนรวม</small>${Fmt.currency(r.total_cost)}</div>
           </div>
           <div class="mt-3"><small class="text-muted">รายการ:</small> ${items.map(i => `<span class="badge bg-light text-dark border me-1">${i.product_name || i.product_id} ×${i.quantity}</span>`).join('')}</div>
         </div>
@@ -686,6 +774,7 @@ function renderStockTable(data) {
     const minQty = parseFloat(s.min_stock || 0);
     const val    = qty * parseFloat(s.cost_price || 0);
     const isLow  = minQty > 0 && qty <= minQty;
+    const safeName = (s.product_name || '').replace(/'/g, "\\'");
     const orderBtn = isLow
       ? `<button class="btn btn-sm btn-warning" title="${t('btn_order')}"
            onclick="window.location.href='/dashboard/purchase/?new=1&product=${encodeURIComponent(s.product_id)}'">
@@ -699,9 +788,118 @@ function renderStockTable(data) {
       <td class="text-end">${Fmt.currency(s.cost_price)}</td>
       <td class="text-end fw-semibold">${Fmt.currency(val)}</td>
       <td>${isLow ? `<span class="badge bg-danger">${t('status_low_badge')}</span>` : `<span class="badge bg-success">${t('status_normal_badge')}</span>`}</td>
-      <td>${orderBtn}</td>
+      <td class="text-end">
+        <button class="btn btn-sm btn-outline-info me-1" title="${t('btn_import_history')}"
+          onclick="openStockImportHistory('${s.product_id}', '${safeName}')">
+          <i class="fas fa-history"></i></button>${orderBtn}
+      </td>
     </tr>`;
   }).join(''));
+}
+
+function openStockImportHistory(productId, productName) {
+  window.location.href = `/dashboard/stock/imports/?id=${encodeURIComponent(productId)}&name=${encodeURIComponent(productName)}`;
+}
+
+async function loadStockImportHistory() {
+  const params      = new URLSearchParams(window.location.search);
+  const productId   = params.get('id')   || '';
+  const productName = params.get('name') || productId;
+
+  if (!productId) {
+    $('#sih-table-body').html(`<tr><td colspan="8" class="text-center text-danger py-5">ไม่พบรหัสสินค้า</td></tr>`);
+    return;
+  }
+
+  $('#sih-product-title').text(productName);
+  document.title = `${t('modal_stock_import_history')}: ${productName}`;
+
+  $('#sih-table-body').html('<tr><td colspan="8" class="text-center py-5"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>');
+
+  try {
+    const res = await API.getStockImportHistory(productId);
+    if (!res.success) throw new Error(res.message);
+    const data = res.data || [];
+
+    if (!data.length) {
+      $('#sih-stats-row').hide();
+      $('#sih-table-body').html(`<tr><td colspan="8" class="text-center text-muted py-5">${t('no_import_history')}</td></tr>`);
+      return;
+    }
+
+    const totalQty = data.reduce((s, r) => s + r.quantity, 0);
+    const totalVal = data.reduce((s, r) => s + r.quantity * r.unit_cost, 0);
+    $('#sih-stat-count').text(data.length);
+    $('#sih-stat-qty').text(Fmt.number(totalQty));
+    $('#sih-stat-val').text(Fmt.currency(totalVal));
+    $('#sih-stats-row').show();
+
+    $('#sih-table-body').html(data.map(r => {
+      const safeSupplier = (r.supplier || '').replace(/'/g, "\\'");
+      const extraBtn = (r.status === 'received' && Auth.isAdmin())
+        ? `<button class="btn btn-sm btn-outline-warning" title="${t('btn_add_extra_cost')}"
+             onclick="openAddExtraCost('${r.import_id}', ${r.quantity}, '${safeSupplier}', '${r.order_date}')">
+             <i class="fas fa-plus me-1"></i>${t('btn_add_extra_cost')}</button>`
+        : '';
+      return `<tr>
+        <td>${Fmt.date(r.order_date)}</td>
+        <td>${r.supplier || '-'}</td>
+        <td class="text-center fw-bold">${Fmt.number(r.quantity)}</td>
+        <td class="text-end">${Fmt.currency(r.unit_cost)}</td>
+        <td class="text-end fw-semibold">${Fmt.currency(r.quantity * r.unit_cost)}</td>
+        <td>${Fmt.statusBadge(r.status)}</td>
+        <td><small class="text-muted">${r.import_id}</small></td>
+        <td class="text-end">${extraBtn}</td>
+      </tr>`;
+    }).join(''));
+  } catch (e) {
+    showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger');
+    $('#sih-table-body').html(`<tr><td colspan="8" class="text-center text-danger py-4"><i class="fas fa-exclamation-circle me-2"></i>${e.message}</td></tr>`);
+  }
+}
+
+let _ecModalInstance = null;
+
+function openAddExtraCost(importId, qty, supplier, orderDate) {
+  $('#ec-import-id').val(importId);
+  $('#ec-orig-qty').val(qty);
+  $('#ec-amount').val('');
+  $('#ec-note').val('');
+  $('#ec-per-unit').text('-');
+  $('#ec-info-text').text(`${supplier || '-'} | ${Fmt.date(orderDate)} | ${t('th_qty')}: ${Fmt.number(qty)} ${t('th_unit')}`);
+  _ecModalInstance = _ecModalInstance || new bootstrap.Modal(document.getElementById('modalExtraCost'));
+  _ecModalInstance.show();
+}
+
+function updateEcPerUnit() {
+  const qty    = parseFloat($('#ec-orig-qty').val()) || 0;
+  const amount = parseFloat($('#ec-amount').val())   || 0;
+  const per    = qty > 0 && amount > 0 ? amount / qty : 0;
+  $('#ec-per-unit').text(per > 0 ? Fmt.currency(per) : '-');
+}
+
+async function saveExtraCost() {
+  const productId = new URLSearchParams(window.location.search).get('id') || '';
+  const importId  = $('#ec-import-id').val();
+  const amount    = parseFloat($('#ec-amount').val()) || 0;
+  const note      = $('#ec-note').val().trim();
+
+  if (!amount || amount <= 0) { showToast(t('lbl_extra_amount') + ' ต้องมากกว่า 0', 'warning'); return; }
+
+  const $btn = $('#btn-ec-save');
+  $btn.prop('disabled', true).html('<div class="spinner-border spinner-border-sm me-2"></div>กำลังบันทึก...');
+
+  try {
+    const res = await API.addImportExtraCost({ import_id: importId, product_id: productId, amount, note });
+    if (!res.success) throw new Error(res.message);
+    showToast(res.message || 'บันทึกสำเร็จ', 'success');
+    bootstrap.Modal.getInstance(document.getElementById('modalExtraCost')).hide();
+    loadStockImportHistory();
+  } catch (e) {
+    showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger');
+  } finally {
+    $btn.prop('disabled', false).html(`<i class="fas fa-save me-1"></i>${t('btn_save_cost')}`);
+  }
 }
 
 $('#stock-search').on('input', function () {
@@ -757,15 +955,32 @@ $(document).on('click', '.wd-filter', function () {
   renderWithdrawalTable(App.withdrawals);
 });
 
-function openWithdrawalModal() {
+async function openWithdrawalModal() {
   App.editingId = null;
   $('#wd-form')[0].reset();
   $('#wd-items-container').html('');
+  new bootstrap.Modal('#modalWithdrawal').show();
+
+  // ถ้ายังไม่มีข้อมูล (prefetch ยังไม่เสร็จ) → โหลดก่อนสร้าง dropdown
+  if (!App.products.length || !App.recipients.length) {
+    $('#wd-items-container').html(
+      '<div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลดข้อมูล...</div>'
+    );
+    try {
+      const fetchers = [];
+      if (!App.products.length)   fetchers.push(API.getProducts());
+      if (!App.recipients.length) fetchers.push(API.getRecipients());
+      const results = await Promise.all(fetchers);
+      let i = 0;
+      if (!App.products.length   && results[i] && results[i].success)   { App.products   = results[i++].data || []; }
+      if (!App.recipients.length && results[i] && results[i].success)   { App.recipients = results[i].data   || []; }
+    } catch (_) {}
+    $('#wd-items-container').html('');
+  }
+
   addWdItem();
   calcWdTotal();
-  // Refresh recipients
   populateRecipientSelects();
-  new bootstrap.Modal('#modalWithdrawal').show();
 }
 
 function addWdItem() {
@@ -1146,6 +1361,7 @@ async function generateReport() {
     $('#rpt-stat-import-cost').text(Fmt.currency(d.totals.total_import_cost));
     $('#rpt-stat-withdrawals').text(d.withdrawals.length);
     $('#rpt-stat-stock-value').text(Fmt.currency(d.totals.total_stock_value));
+    $('#rpt-stat-expenses').text(Fmt.currency(d.totals.total_expenses || 0));
 
     // Profit calculation
     // สร้าง map product_id → selling_price จาก App.products
@@ -1185,6 +1401,11 @@ async function generateReport() {
     const profitColor = totalProfit >= 0 ? 'text-success' : 'text-danger';
     $('#rpt-stat-profit').html(`<span class="${profitColor}">${Fmt.currency(totalProfit)}</span>`);
     $('#rpt-stat-margin').html(`<span class="${profitColor}">${margin.toFixed(1)}%</span>`);
+
+    const totalExpenses = parseFloat(d.totals.total_expenses) || 0;
+    const netProfit     = totalProfit - totalExpenses;
+    const netColor      = netProfit >= 0 ? 'text-success' : 'text-danger';
+    $('#rpt-stat-net-profit').html(`<span class="${netColor}">${Fmt.currency(netProfit)}</span>`);
 
     // Profit table
     if (profitRows.length) {
@@ -1234,6 +1455,21 @@ async function generateReport() {
       $('#rpt-wd-body').html('<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูล</td></tr>');
     }
 
+    // Expenses table in report
+    if (d.expenses && d.expenses.length) {
+      $('#rpt-expenses-body').html(d.expenses.map(r => `<tr>
+        <td>${Fmt.date(r.date)}</td>
+        <td><span class="badge bg-secondary">${r.category || '-'}</span></td>
+        <td>${r.description || '-'}</td>
+        <td class="text-end fw-semibold">${Fmt.currency(r.amount)}</td>
+      </tr>`).join('') + `<tr class="table-light fw-bold">
+        <td colspan="3">รวมค่าใช้จ่าย</td>
+        <td class="text-end">${Fmt.currency(d.totals.total_expenses)}</td>
+      </tr>`);
+    } else {
+      $('#rpt-expenses-body').html('<tr><td colspan="4" class="text-center text-muted">ไม่มีค่าใช้จ่ายในเดือนนี้</td></tr>');
+    }
+
     // Store for export
     App._reportData = d;
     App._reportMeta = { month, year };
@@ -1262,6 +1498,11 @@ function exportToExcel() {
   d.withdrawals.forEach(w => {
     csv += `${w.id},${Fmt.date(w.withdrawal_date || w.created_at)},${w.recipient_name || ''},${w.department || ''},${w.total_value},${statusLabel(w.status)}\n`;
   });
+  csv += `\n=== ค่าใช้จ่ายรายเดือน ===\n`;
+  csv += `วันที่,หมวดหมู่,รายละเอียด,จำนวนเงิน\n`;
+  (d.expenses || []).forEach(r => {
+    csv += `${Fmt.date(r.date)},${r.category || ''},${r.description || ''},${r.amount}\n`;
+  });
   csv += `\n=== สรุป ===\n`;
   csv += `ต้นทุนนำเข้ารวม,${d.totals.total_import_cost}\n`;
   csv += `มูลค่าเบิกจ่ายรวม,${d.totals.total_withdrawal_value}\n`;
@@ -1270,6 +1511,8 @@ function exportToExcel() {
   csv += `ต้นทุนสินค้าที่เบิก,${$('#rpt-stat-cogs').text()}\n`;
   csv += `กำไรขั้นต้น,${$('#rpt-stat-profit').text()}\n`;
   csv += `Gross Margin,${$('#rpt-stat-margin').text()}\n`;
+  csv += `ค่าใช้จ่ายรายเดือน,${d.totals.total_expenses || 0}\n`;
+  csv += `กำไรสุทธิ (หลังหักค่าใช้จ่าย),${$('#rpt-stat-net-profit').text()}\n`;
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
@@ -1277,6 +1520,122 @@ function exportToExcel() {
   link.download = `รายงาน_${monthNames[meta.month]}_${meta.year}.csv`;
   link.click();
   showToast('ส่งออกไฟล์สำเร็จ!', 'success');
+}
+
+// ============================================================
+// SECTION: EXPENSES (ค่าใช้จ่ายรายเดือน)
+// ============================================================
+async function loadExpenses() {
+  const month = $('#exp-filter-month').val();
+  const year  = $('#exp-filter-year').val();
+  try {
+    const [expRes, catRes] = await Promise.all([
+      API.getExpenses(month, year),
+      App._expenseCategories ? Promise.resolve({ success: true, data: App._expenseCategories }) : API.getExpenseCategories()
+    ]);
+    if (!expRes.success) throw new Error(expRes.message);
+    App._expenses = expRes.data || [];
+    if (catRes.success) {
+      App._expenseCategories = catRes.data || [];
+      populateExpenseCategorySelect(App._expenseCategories);
+    }
+    renderExpensesTable(App._expenses);
+  } catch (e) { showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger'); }
+}
+
+function populateExpenseCategorySelect(categories) {
+  const $sel = $('#exp-category');
+  const current = $sel.val();
+  $sel.html('<option value="">-- เลือกหมวดหมู่ --</option>');
+  if (categories.length === 0) {
+    $sel.append('<option value="" disabled>ยังไม่มีหมวดหมู่ — เพิ่มใน Sheet "ExpenseCategories"</option>');
+  } else {
+    categories.forEach(function(name) {
+      $sel.append(`<option value="${name}">${name}</option>`);
+    });
+  }
+  if (current) $sel.val(current);
+}
+
+function renderExpensesTable(data) {
+  if (!data.length) {
+    $('#expenses-table-body').html('<tr><td colspan="6" class="text-center text-muted py-4">ไม่พบรายการค่าใช้จ่ายในเดือนนี้</td></tr>');
+    $('#exp-total').text('฿0.00');
+    return;
+  }
+  const total = data.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  $('#expenses-table-body').html(data.map(r => `<tr>
+    <td>${Fmt.date(r.date)}</td>
+    <td><span class="badge bg-secondary">${r.category || '-'}</span></td>
+    <td>${r.description || '-'}</td>
+    <td class="text-end fw-semibold">${Fmt.currency(r.amount)}</td>
+    <td class="text-muted small">${r.created_by || '-'}</td>
+    <td>
+      <button class="btn btn-sm btn-outline-primary me-1" onclick="openEditExpense('${r.id}')"><i class="fas fa-edit"></i></button>
+      <button class="btn btn-sm btn-outline-danger" onclick="deleteExpenseConfirm('${r.id}')"><i class="fas fa-trash"></i></button>
+    </td>
+  </tr>`).join(''));
+  $('#exp-total').text(Fmt.currency(total));
+}
+
+async function openAddExpenseModal() {
+  App.editingId = null;
+  $('#modalExpenseLabel').html('<i class="fas fa-receipt me-2"></i>เพิ่มค่าใช้จ่าย');
+  $('#expense-form')[0].reset();
+  $('#exp-date').val(new Date().toISOString().split('T')[0]);
+  new bootstrap.Modal('#modalExpense').show();
+  if (!App._expenseCategories) {
+    $('#exp-category').html('<option value="">กำลังโหลดหมวดหมู่...</option>');
+    const res = await API.getExpenseCategories();
+    if (res.success) App._expenseCategories = res.data || [];
+  }
+  populateExpenseCategorySelect(App._expenseCategories || []);
+}
+
+function openEditExpense(id) {
+  const r = (App._expenses || []).find(e => e.id === id);
+  if (!r) return;
+  App.editingId = id;
+  $('#modalExpenseLabel').html('<i class="fas fa-edit me-2"></i>แก้ไขค่าใช้จ่าย');
+  populateExpenseCategorySelect(App._expenseCategories || []);
+  $('#exp-date').val(String(r.date).split('T')[0]);
+  $('#exp-category').val(r.category || '');
+  $('#exp-description').val(r.description || '');
+  $('#exp-amount').val(r.amount || '');
+  new bootstrap.Modal('#modalExpense').show();
+}
+
+async function saveExpense() {
+  const date        = $('#exp-date').val();
+  const category    = $('#exp-category').val();
+  const description = $('#exp-description').val().trim();
+  const amount      = parseFloat($('#exp-amount').val());
+
+  if (!date || !category || isNaN(amount) || amount <= 0) {
+    showToast('กรุณากรอกวันที่ หมวดหมู่ และจำนวนเงิน', 'warning'); return;
+  }
+
+  const payload = { date, category, description, amount };
+  await withBtnLoading('#btn-save-expense',
+    '<i class="fas fa-save me-1"></i>บันทึก', async () => {
+    const res = App.editingId
+      ? await API.updateExpense({ id: App.editingId, ...payload })
+      : await API.addExpense(payload);
+    if (!res.success) throw new Error(res.message);
+    bootstrap.Modal.getInstance('#modalExpense').hide();
+    showToast(res.message || 'บันทึกสำเร็จ', 'success');
+    loadExpenses();
+  }).catch(e => showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'));
+}
+
+async function deleteExpenseConfirm(id) {
+  if (!confirm('ยืนยันลบรายการค่าใช้จ่ายนี้?')) return;
+  try {
+    const res = await API.deleteExpense(id);
+    if (!res.success) throw new Error(res.message);
+    showToast('ลบรายการสำเร็จ', 'success');
+    loadExpenses();
+  } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
 }
 
 // ============================================================

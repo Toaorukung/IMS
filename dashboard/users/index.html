@@ -145,6 +145,7 @@
 // Users Page Logic
 // =========================================================
 let _branches = [];
+let _users = [];
 let _editingUserId = null;
 
 async function pageInitUsers() {
@@ -163,7 +164,8 @@ async function loadUsers() {
   try {
     const res = await API.getUsers();
     if (!res.success) throw new Error(res.message);
-    renderUsersTable(res.data || []);
+    _users = res.data || [];
+    renderUsersTable(_users);
   } catch (e) { showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger'); }
 }
 
@@ -245,27 +247,39 @@ function openAddUser() {
   new bootstrap.Modal('#modalUser').show();
 }
 
-function openEditUser(id) {
-  API.getUsers().then(res => {
-    const u = (res.data || []).find(x => x.id === id);
-    if (!u) return;
-    _editingUserId = id;
-    $('#usr-username').val(u.username).prop('disabled', true);
-    $('#usr-username-hint').removeClass('d-none');
-    $('#usr-password').val('');
-    $('#usr-pw-required').hide();
-    $('#usr-pw-hint').removeClass('d-none');
+async function openEditUser(id) {
+  _editingUserId = id;
+  $('#modalUserLabel').html(`<i class="fas fa-user-edit me-2"></i>${t('modal_edit_user')}`);
+  $('#user-form')[0].reset();
+  $('#usr-username').val('').prop('disabled', true);
+  $('#usr-username-hint').removeClass('d-none');
+  $('#usr-pw-required').hide();
+  $('#usr-pw-hint').removeClass('d-none');
+  $('#usr-status-group').show();
+  $('#usr-branch-required').hide();
+  $('#user-form').css({ opacity: '0.4', 'pointer-events': 'none' });
+  $('#btn-save-user').prop('disabled', true);
+  new bootstrap.Modal('#modalUser').show();
+
+  try {
+    let users = _users;
+    if (!users.length) {
+      const res = await API.getUsers();
+      users = res.data || [];
+    }
+    const u = users.find(x => x.id === id);
+    if (!u) { showToast('ไม่พบข้อมูลผู้ใช้', 'danger'); bootstrap.Modal.getOrCreateInstance('#modalUser').hide(); return; }
+    $('#usr-username').val(u.username);
     $('#usr-name').val(u.name);
     $('#usr-role').val(u.role);
     $('#usr-branch').val(u.branch_id || '');
     $('#usr-status').val(u.status || 'active');
-    $('#usr-status-group').show();
-    $('#usr-branch-required').hide();  // ไม่บังคับเลือกสาขาตอน edit
     onRoleChange();
     _updateBranchHint();
-    $('#modalUserLabel').html(`<i class="fas fa-user-edit me-2"></i>${t('modal_edit_user')}`);
-    new bootstrap.Modal('#modalUser').show();
-  });
+  } finally {
+    $('#user-form').css({ opacity: '', 'pointer-events': '' });
+    $('#btn-save-user').prop('disabled', false);
+  }
 }
 
 async function saveUser() {

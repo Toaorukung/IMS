@@ -37,8 +37,10 @@ const API = (() => {
     // Imports
     getImports:          ()           => get('getImports', { branch_id: Auth.getBranchId() }),
     addImport:           (d)          => post({ action: 'addImport', branch_id: Auth.getBranchId(), ...d }),
-    updateImportStatus:  (id, status, import_costs) =>
-      post({ action: 'updateImportStatus', id, status, import_costs }),
+    updateImportStatus:  (id, status, import_costs, freight_cost) =>
+      post({ action: 'updateImportStatus', id, status, import_costs, freight_cost }),
+    updateImport:        (d)  => post({ action: 'updateImport',  token: Auth.getToken(), ...d }),
+    deleteImport:        (id) => post({ action: 'deleteImport',  token: Auth.getToken(), id }),
 
     // Withdrawals
     getWithdrawals:         ()           => get('getWithdrawals', { branch_id: Auth.getBranchId() }),
@@ -66,6 +68,17 @@ const API = (() => {
     getUsers:   () => get('getUsers', { token: Auth.getToken() }),
     addUser:    (d) => post({ action: 'addUser',    token: Auth.getToken(), ...d }),
     updateUser: (d) => post({ action: 'updateUser', token: Auth.getToken(), ...d }),
+
+    // Stock import history
+    getStockImportHistory: (productId) => get('getStockImportHistory', { product_id: productId, branch_id: Auth.getBranchId() }),
+    addImportExtraCost:    (d)         => post({ action: 'addImportExtraCost', token: Auth.getToken(), ...d }),
+
+    // Expenses
+    getExpenses:           (month, year) => get('getExpenses', { month, year, branch_id: Auth.getBranchId() }),
+    addExpense:            (d)  => post({ action: 'addExpense',    token: Auth.getToken(), branch_id: Auth.getBranchId(), ...d }),
+    updateExpense:         (d)  => post({ action: 'updateExpense', token: Auth.getToken(), ...d }),
+    deleteExpense:         (id) => post({ action: 'deleteExpense', token: Auth.getToken(), id }),
+    getExpenseCategories:  ()   => get('getExpenseCategories'),
   };
 })();
 

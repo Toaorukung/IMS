@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ประวัตินำเข้าสินค้า – ระบบเบิกสินค้าและจัดการคลังสินค้า</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+  <link rel="stylesheet" href="../../../assets/css/style.css">
+</head>
+<body data-page="stock-imports">
+<div id="wrapper">
+
+<nav id="sidebar"></nav>
+
+<div id="main-content">
+  <div id="topbar">
+    <div class="d-flex align-items-center gap-3">
+      <button id="sidebar-toggle" class="btn btn-sm btn-outline-secondary d-lg-none"><i class="fas fa-bars"></i></button>
+      <a href="/dashboard/stock/" class="btn btn-sm btn-outline-secondary">
+        <i class="fas fa-arrow-left me-1"></i><span data-i18n="btn_back_stock">กลับสต็อค</span>
+      </a>
+      <div class="topbar-title" id="topbar-title" data-i18n="modal_stock_import_history">ประวัตินำเข้าสินค้า</div>
+    </div>
+    <div class="topbar-actions">
+      <button id="btn-logout" class="btn btn-sm btn-outline-danger" data-i18n="btn_logout">
+        <i class="fas fa-sign-out-alt me-1"></i>ออกจากระบบ
+      </button>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <div class="section-header mb-3">
+      <div>
+        <div class="section-header-title">
+          <i class="fas fa-history me-2 text-primary"></i>
+          <span data-i18n="modal_stock_import_history">ประวัตินำเข้าสินค้า</span>
+        </div>
+        <div class="text-muted mt-1 fs-6" id="sih-product-title"></div>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-4" id="sih-stats-row" style="display:none">
+      <div class="col-md-4">
+        <div class="stat-card">
+          <div class="stat-icon blue"><i class="fas fa-boxes"></i></div>
+          <div class="stat-value" id="sih-stat-count">-</div>
+          <div class="stat-label" data-i18n="sih_stat_times">ครั้งที่นำเข้า</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="stat-card">
+          <div class="stat-icon teal"><i class="fas fa-layer-group"></i></div>
+          <div class="stat-value" id="sih-stat-qty">-</div>
+          <div class="stat-label" data-i18n="sih_stat_total_qty">จำนวนรวม (ชิ้น)</div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="stat-card">
+          <div class="stat-icon green"><i class="fas fa-wallet"></i></div>
+          <div class="stat-value small" id="sih-stat-val">-</div>
+          <div class="stat-label" data-i18n="sih_stat_total_cost">ต้นทุนนำเข้ารวม</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <i class="fas fa-list me-2"></i>
+          <span data-i18n="sih_panel_title">รายการนำเข้า</span>
+        </div>
+        <button class="btn btn-sm btn-outline-primary" onclick="loadStockImportHistory()">
+          <i class="fas fa-sync-alt"></i>
+        </button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th data-i18n="th_order_date">วันที่สั่ง</th>
+              <th data-i18n="th_supplier">ซัพพลายเออร์</th>
+              <th class="text-center" data-i18n="th_qty">จำนวน</th>
+              <th class="text-end" data-i18n="th_unit_cost">ต้นทุน/ชิ้น</th>
+              <th class="text-end" data-i18n="th_total_val">มูลค่ารวม</th>
+              <th data-i18n="th_status">สถานะ</th>
+              <th data-i18n="th_import_ref">เลขที่ใบสั่ง</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="sih-table-body">
+            <tr><td colspan="8" class="text-center text-muted py-5">
+              <div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div><!-- end #main-content -->
+</div><!-- end #wrapper -->
+
+<div id="toast-container"></div>
+
+<!-- Modal: เพิ่มต้นทุนแฝง -->
+<div class="modal fade" id="modalExtraCost" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="fas fa-plus-circle me-2 text-warning"></i>
+          <span data-i18n="modal_extra_cost_title">เพิ่มต้นทุนแฝงให้ล็อตนี้</span>
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info py-2 small mb-3" id="ec-info-box">
+          <i class="fas fa-info-circle me-1"></i>
+          <span id="ec-info-text"></span>
+        </div>
+        <div class="alert alert-warning py-2 small mb-3">
+          <i class="fas fa-exclamation-triangle me-1"></i>
+          <span data-i18n="ec_scope_warning">ต้นทุนจะถูกบวกเข้ากับสต็อคที่ยังคงเหลืออยู่ของสินค้านี้ทั้งหมด</span>
+        </div>
+        <input type="hidden" id="ec-import-id">
+        <input type="hidden" id="ec-orig-qty">
+        <div class="mb-3">
+          <label class="form-label fw-semibold" data-i18n="lbl_extra_amount">ยอดค่าใช้จ่ายเพิ่มเติม (฿)</label>
+          <input type="number" id="ec-amount" class="form-control" min="0.01" step="0.01"
+            placeholder="0.00" oninput="updateEcPerUnit()">
+          <div class="mt-2 p-2 bg-light rounded d-flex justify-content-between align-items-center">
+            <span class="text-muted small" data-i18n="lbl_extra_per_unit">ต้นทุนเพิ่ม/ชิ้น:</span>
+            <strong class="text-primary" id="ec-per-unit">-</strong>
+          </div>
+        </div>
+        <div class="mb-1">
+          <label class="form-label fw-semibold" data-i18n="lbl_notes">หมายเหตุ (ไม่บังคับ)</label>
+          <input type="text" id="ec-note" class="form-control" data-i18n-placeholder="ph_notes" placeholder="หมายเหตุ...">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="btn_cancel">ยกเลิก</button>
+        <button type="button" class="btn btn-warning" id="btn-ec-save" onclick="saveExtraCost()">
+          <i class="fas fa-save me-1"></i><span data-i18n="btn_save_cost">บันทึกต้นทุน</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../../../assets/js/config.js"></script>
+<script src="../../../assets/js/i18n.js"></script>
+<script src="../../../assets/js/api.js"></script>
+<script src="../../../assets/js/layout.js"></script>
+<script src="../../../assets/js/app.js"></script>
+</body>
+</html>

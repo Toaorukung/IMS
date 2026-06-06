@@ -18,6 +18,7 @@ const I18n = (() => {
       nav_withdrawal: 'เบิกสินค้า',
       nav_recipients: 'ผู้รับสินค้า',
       nav_report: 'รายงานรายเดือน',
+      nav_expenses: 'ค่าใช้จ่ายรายเดือน',
       nav_products: 'จัดการสินค้า',
       // Common buttons
       btn_logout: 'ออกจากระบบ',
@@ -245,6 +246,25 @@ const I18n = (() => {
       opt_active:          'active – ใช้งาน',
       opt_inactive:        'inactive – ระงับ',
       hint_no_branch:      'ไม่ระบุสาขา — user จะไม่เห็นข้อมูลใดเลยจนกว่าจะกำหนดสาขา',
+      // Stock import history page
+      btn_import_history:         'ดูประวัตินำเข้า',
+      btn_back_stock:             'กลับสต็อค',
+      modal_stock_import_history: 'ประวัตินำเข้าสินค้า',
+      th_order_date:              'วันที่สั่ง',
+      th_unit_cost:               'ต้นทุน/ชิ้น',
+      th_import_ref:              'เลขที่ใบสั่ง',
+      no_import_history:          'ยังไม่มีประวัตินำเข้าสำหรับสินค้านี้',
+      sih_stat_times:             'ครั้งที่นำเข้า',
+      sih_stat_total_qty:         'จำนวนรวม (ชิ้น)',
+      sih_stat_total_cost:        'ต้นทุนนำเข้ารวม',
+      sih_panel_title:            'รายการนำเข้าทั้งหมด',
+      // Extra cost modal
+      btn_add_extra_cost:         'เพิ่มต้นทุนแฝง',
+      modal_extra_cost_title:     'เพิ่มต้นทุนแฝงให้ล็อตนี้',
+      lbl_extra_amount:           'ยอดค่าใช้จ่ายเพิ่มเติม (฿)',
+      lbl_extra_per_unit:         'ต้นทุนเพิ่ม/ชิ้น:',
+      ec_scope_warning:           'ต้นทุนจะถูกบวกเข้ากับสต็อคที่ยังคงเหลืออยู่ของสินค้านี้ทั้งหมด',
+      btn_save_cost:              'บันทึกต้นทุน',
     },
 
     en: {
@@ -260,6 +280,7 @@ const I18n = (() => {
       nav_withdrawal: 'Withdrawal',
       nav_recipients: 'Recipients',
       nav_report: 'Monthly Report',
+      nav_expenses: 'Monthly Expenses',
       nav_products: 'Products',
       // Common buttons
       btn_logout: 'Logout',
@@ -487,6 +508,25 @@ const I18n = (() => {
       opt_active:          'active – Active',
       opt_inactive:        'inactive – Suspended',
       hint_no_branch:      'No branch set — user will see no data until a branch is assigned',
+      // Stock import history page
+      btn_import_history:         'Import History',
+      btn_back_stock:             'Back to Stock',
+      modal_stock_import_history: 'Product Import History',
+      th_order_date:              'Order Date',
+      th_unit_cost:               'Cost/Unit',
+      th_import_ref:              'Import Ref.',
+      no_import_history:          'No import history found for this product',
+      sih_stat_times:             'Import Count',
+      sih_stat_total_qty:         'Total Qty (units)',
+      sih_stat_total_cost:        'Total Import Cost',
+      sih_panel_title:            'All Import Records',
+      // Extra cost modal
+      btn_add_extra_cost:         'Add Extra Cost',
+      modal_extra_cost_title:     'Add Extra Cost to This Lot',
+      lbl_extra_amount:           'Additional Cost Amount (฿)',
+      lbl_extra_per_unit:         'Extra Cost/Unit:',
+      ec_scope_warning:           'Cost will be added to all remaining stock units of this product',
+      btn_save_cost:              'Save Cost',
     }
   };
 
