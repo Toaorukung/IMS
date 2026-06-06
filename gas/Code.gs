@@ -113,41 +113,43 @@ function processRequest(action, params, body) {
       case 'validateToken':          return validateToken(p);
       case 'getProducts':            return getProducts(p);
       case 'addProduct':             return addProduct(p);
-      case 'updateProduct':          return updateProduct(p);
+      case 'updateProduct':          return withLock(function() { return updateProduct(p); });
       case 'deleteProduct':          return deleteProduct(p);
       case 'getStock':               return getStock(p);
       case 'getImports':             return getImports(p);
-      case 'addImport':              return addImport(p);
-      case 'updateImportStatus':     return updateImportStatus(p);
+      case 'addImport':              return withLock(function() { return addImport(p); });
+      case 'updateImportStatus':     return withLock(function() { return updateImportStatus(p); });
       case 'getWithdrawals':         return getWithdrawals(p);
-      case 'addWithdrawal':          return addWithdrawal(p);
-      case 'updateWithdrawalStatus': return updateWithdrawalStatus(p);
-      case 'partialReturn':          return partialReturn(p);
+      case 'addWithdrawal':          return withLock(function() { return addWithdrawal(p); });
+      case 'updateWithdrawalStatus': return withLock(function() { return updateWithdrawalStatus(p); });
+      case 'partialReturn':          return withLock(function() { return partialReturn(p); });
       case 'getRecipients':          return getRecipients(p);
       case 'addRecipient':           return addRecipient(p);
       case 'updateRecipient':        return updateRecipient(p);
       case 'getDashboardStats':      return getDashboardStats(p);
       case 'getMonthlyReport':       return getMonthlyReport(p);
-      case 'getBranches':            return getBranches();
+      case 'getBranches':            return getBranches(p);
       case 'addBranch':              return addBranch(p);
       case 'updateBranch':           return updateBranch(p);
       case 'deleteBranch':           return deleteBranch(p);
-      case 'getBranchOverview':      return getBranchOverview();
+      case 'getBranchOverview':      return getBranchOverview(p);
       case 'getUsers':               return getUsers(p);
       case 'addUser':                return addUser(p);
       case 'updateUser':             return updateUser(p);
       case 'getStockImportHistory':  return getStockImportHistory(p);
-      case 'addImportExtraCost':     return addImportExtraCost(p);
+      case 'addImportExtraCost':     return withLock(function() { return addImportExtraCost(p); });
       case 'deleteImport':           return deleteImport(p);
       case 'updateImport':           return updateImport(p);
       case 'getExpenses':            return getExpenses(p);
       case 'addExpense':             return addExpense(p);
       case 'updateExpense':          return updateExpense(p);
       case 'deleteExpense':          return deleteExpense(p);
-      case 'getExpenseCategories':   return getExpenseCategories();
+      case 'getExpenseCategories':   return getExpenseCategories(p);
       default: return { success: false, message: 'Unknown action: ' + action };
     }
   } catch (err) {
+    // Fix: log server-side so production failures are debuggable (was silently returned only to client)
+    Logger.log('processRequest error [action=' + action + ']: ' + (err && err.stack ? err.stack : err));
     return { success: false, message: err.toString() };
   }
 }
@@ -191,6 +193,31 @@ function filterByBranch(rows, branchId, role) {
   return rows.filter(function(r) { return String(r.branch_id || '') === String(branchId); });
 }
 
+// Resolve which branch an authenticated caller may operate on.
+// superadmin → may target any requested branch, or '' = all branches.
+// admin / staff → always locked to their own branch (client-supplied value is ignored,
+// so an admin in branch A can no longer read/write branch B by spoofing branch_id).
+function effectiveBranchId(user, requestedBranchId) {
+  if (user && user.role === 'superadmin') return requestedBranchId || '';
+  return (user && user.branch_id) || '';
+}
+
+// Serialize stock-mutating operations so concurrent web-app requests can't
+// interleave reads/writes on the Stock sheet (no transactions in Sheets).
+function withLock(fn) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000); // wait up to 15s for any in-flight mutation to finish
+  } catch (e) {
+    return { success: false, message: 'ระบบกำลังประมวลผลคำขออื่นอยู่ กรุณาลองใหม่อีกครั้ง' };
+  }
+  try {
+    return fn();
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
 // ---------- Cache Helpers ----------
 function _cacheGet(key) {
   try { var v = CacheService.getScriptCache().get(key); return v ? JSON.parse(v) : null; }
@@ -205,7 +232,11 @@ function _cacheRemove(key) {
 
 // ---------- Auth Gate ----------
 // Fix 1: validate token server-side before allowing sensitive operations
-// Uses CacheService so repeated calls within the TTL don't re-read sheets
+// Uses CacheService so repeated calls within the TTL don't re-read sheets.
+// ASSUMPTION / TRADE-OFF: the validated user is cached for 300s. Suspending a user
+// (status=inactive) or changing their role therefore takes effect only after the
+// cache entry expires — up to ~5 minutes of stale access. Lower the TTL below (and the
+// _cachePut on success) if faster revocation is required.
 function requireAuth(p, requiredRoles) {
   var token = (p || {}).token || '';
   if (!token) return { ok: false, message: 'กรุณาเข้าสู่ระบบ (token หายไป)' };
@@ -302,19 +333,23 @@ function validateToken(data) {
 
 // ---------- Products ----------
 function getProducts(p) {
+  const auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Products');
   if (!sheet) return { success: false, message: 'ไม่พบชีท Products' };
-  const branchId = (p || {}).branch_id || '';
+  const branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
   let data = sheetToObjects(sheet).filter(pr => pr.status !== 'inactive');
-  data = filterByBranch(data, branchId);
+  data = filterByBranch(data, branchId, auth.user.role);
   return { success: true, data };
 }
 
 function addProduct(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Products');
   if (!sheet) return { success: false };
   const id       = uid('PRD');
-  const branchId = data.branch_id || '';
+  const branchId = effectiveBranchId(auth.user, data.branch_id);
   sheet.appendRow([id, data.code || '', data.name, data.category || '', data.unit || 'ชิ้น',
     parseFloat(data.cost_price) || 0, parseFloat(data.selling_price) || 0,
     parseInt(data.min_stock) || 0, data.notes || '', now(), 'active', branchId]);
@@ -325,6 +360,8 @@ function addProduct(data) {
 }
 
 function updateProduct(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Products');
   if (!sheet) return { success: false };
   const rows = sheetToObjects(sheet);
@@ -339,6 +376,8 @@ function updateProduct(data) {
 }
 
 function deleteProduct(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Products');
   if (!sheet) return { success: false };
   const ok = updateRow(sheet, data.id, { status: 'inactive' });
@@ -372,6 +411,9 @@ function addStockLot(productId, quantity, cost, branchId) {
 
 // FIFO deduction: deduct quantity from oldest (top) lots first
 // col indices (0-based): 1=product_id, 5=quantity, 8=last_updated
+// ASSUMPTION: lots are consumed in Stock-sheet row order (addStockLot appends, so the
+// topmost matching row is the oldest lot). Do NOT manually sort/reorder the Stock sheet —
+// doing so silently changes which lot is consumed first and corrupts FIFO costing.
 function deductStockFIFO(productId, quantity) {
   var sheet = getSheet('Stock');
   if (!sheet || sheet.getLastRow() < 2) return;
@@ -422,9 +464,11 @@ function revalueStock(productId, newCost) {
 
 // getStock: quantity จาก Stock sheet + cost_price (weighted avg รวม extras) จาก Imports sheet
 function getStock(p) {
+  var auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
   var stockSheet = getSheet('Stock');
   if (!stockSheet) return { success: false, message: 'ไม่พบชีท Stock' };
-  var branchId = (p || {}).branch_id || '';
+  var branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
 
   // 1. รวม quantity + metadata จาก Stock lots
   var stockRows = sheetToObjects(stockSheet);
@@ -493,14 +537,16 @@ function getStock(p) {
 // ---------- Imports (Purchase Orders) ----------
 // คืน import ทุกรายการที่มีสินค้านี้ เรียงจากใหม่ไปเก่า
 function getStockImportHistory(p) {
+  const auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Imports');
   if (!sheet) return { success: false, message: 'ไม่พบชีท Imports' };
   const productId = String((p || {}).product_id || '');
-  const branchId  = (p || {}).branch_id || '';
+  const branchId  = effectiveBranchId(auth.user, (p || {}).branch_id);
   if (!productId) return { success: false, message: 'ต้องระบุ product_id' };
 
   let rows = sheetToObjects(sheet);
-  rows = filterByBranch(rows, branchId);
+  rows = filterByBranch(rows, branchId, auth.user.role);
 
   const result = [];
   rows.forEach(function(r) {
@@ -604,11 +650,13 @@ function addImportExtraCost(p) {
 }
 
 function getImports(p) {
+  const auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Imports');
   if (!sheet) return { success: false };
-  const branchId = (p || {}).branch_id || '';
+  const branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
   let rows = sheetToObjects(sheet);
-  rows = filterByBranch(rows, branchId);
+  rows = filterByBranch(rows, branchId, auth.user.role);
   rows.forEach(r => {
     try { r.items = JSON.parse(r.items); } catch (_) { r.items = []; }
     try { r.import_costs = JSON.parse(r.import_costs); } catch (_) { r.import_costs = {}; }
@@ -617,10 +665,12 @@ function getImports(p) {
 }
 
 function addImport(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Imports');
   if (!sheet) return { success: false };
   const id        = uid('IMP');
-  const branchId  = data.branch_id || '';
+  const branchId  = effectiveBranchId(auth.user, data.branch_id);
   const items     = data.items || [];
   const importCosts = data.import_costs || {};
   const baseTHB   = (parseFloat(data.yuan_amount) || 0) * (parseFloat(data.exchange_rate) || 1);
@@ -690,11 +740,16 @@ function updateImport(data) {
 }
 
 function updateImportStatus(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Imports');
   if (!sheet) return { success: false };
   const rows   = sheetToObjects(sheet);
   const record = rows.find(r => r.id === data.id);
   if (!record) return { success: false, message: 'ไม่พบการสั่งซื้อ' };
+  // Fix: guard against re-receiving. Without this, calling updateImportStatus('received')
+  // twice (double-click / retry / network re-send) ran addStockLot again → stock doubled.
+  const wasReceived = record.status === 'received';
 
   const updates = { status: data.status };
 
@@ -718,7 +773,7 @@ function updateImportStatus(data) {
 
   updateRow(sheet, data.id, updates);
 
-  if (data.status === 'received') {
+  if (data.status === 'received' && !wasReceived) {
     let items = [];
     try { items = JSON.parse(record.items); } catch (_) {}
     const branchId = record.branch_id || '';
@@ -742,11 +797,13 @@ function updateImportStatus(data) {
 
 // ---------- Withdrawals ----------
 function getWithdrawals(p) {
+  const auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Withdrawals');
   if (!sheet) return { success: false };
-  const branchId = (p || {}).branch_id || '';
+  const branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
   let rows = sheetToObjects(sheet);
-  rows = filterByBranch(rows, branchId);
+  rows = filterByBranch(rows, branchId, auth.user.role);
   rows.forEach(r => {
     try { r.items = JSON.parse(r.items); } catch (_) { r.items = []; }
   });
@@ -754,10 +811,12 @@ function getWithdrawals(p) {
 }
 
 function addWithdrawal(data) {
+  var auth = requireAuth(data); // any authenticated role (staff can withdraw)
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Withdrawals');
   if (!sheet) return { success: false };
   const id       = uid('WDR');
-  const branchId = data.branch_id || '';
+  const branchId = effectiveBranchId(auth.user, data.branch_id);
   const items    = Array.isArray(data.items) ? data.items : [];
   const total    = items.reduce((s, i) => s + (parseFloat(i.quantity) * (parseFloat(i.unit_price) || 0)), 0);
 
@@ -777,6 +836,8 @@ function addWithdrawal(data) {
 }
 
 function updateWithdrawalStatus(data) {
+  var auth = requireAuth(data); // any authenticated role (staff can withdraw)
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Withdrawals');
   if (!sheet) return { success: false };
   const rows   = sheetToObjects(sheet);
@@ -807,6 +868,8 @@ function updateWithdrawalStatus(data) {
 }
 
 function partialReturn(data) {
+  var auth = requireAuth(data); // any authenticated role (staff can withdraw/return)
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Withdrawals');
   if (!sheet) return { success: false };
   const rows   = sheetToObjects(sheet);
@@ -844,19 +907,23 @@ function partialReturn(data) {
 
 // ---------- Recipients ----------
 function getRecipients(p) {
+  const auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Recipients');
   if (!sheet) return { success: false };
-  const branchId = (p || {}).branch_id || '';
+  const branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
   let rows = sheetToObjects(sheet).filter(r => r.status === 'active');
-  rows = filterByBranch(rows, branchId);
+  rows = filterByBranch(rows, branchId, auth.user.role);
   return { success: true, data: rows };
 }
 
 function addRecipient(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Recipients');
   if (!sheet) return { success: false };
   const id       = uid('RCP');
-  const branchId = data.branch_id || '';
+  const branchId = effectiveBranchId(auth.user, data.branch_id);
   // Fix 2: "'" + (data.phone || '') — parens required, otherwise "'" + undefined → "'undefined"
   sheet.appendRow([id, data.name, data.department || '', data.position || '',
     "'" + (data.phone || ''), data.email || '', data.notes || '', 'active', now(), branchId]);
@@ -864,6 +931,8 @@ function addRecipient(data) {
 }
 
 function updateRecipient(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Recipients');
   if (!sheet) return { success: false };
   const ok = updateRow(sheet, data.id, data);
@@ -933,10 +1002,16 @@ function updateUser(data) {
 }
 
 // ---------- Branches ----------
-function getBranches() {
+// Internal helper — no auth gate, used by other authenticated handlers (e.g. getBranchOverview)
+function _activeBranches() {
   const sheet = getSheet('Branches');
-  if (!sheet) return { success: true, data: [] };
-  return { success: true, data: sheetToObjects(sheet).filter(b => String(b.status) === 'active') };
+  if (!sheet) return [];
+  return sheetToObjects(sheet).filter(b => String(b.status) === 'active');
+}
+function getBranches(p) {
+  const auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
+  return { success: true, data: _activeBranches() };
 }
 
 function addBranch(data) {
@@ -978,8 +1053,11 @@ function deleteBranch(data) {
 }
 
 // Fix 3: read each sheet once, aggregate per-branch in memory — O(4) reads not O(4N)
-function getBranchOverview() {
-  const branches = getBranches().data || [];
+function getBranchOverview(p) {
+  // superadmin-only — aggregates data across ALL branches
+  const auth = requireAuth(p, ['superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  const branches = _activeBranches();
   if (!branches.length) return { success: true, data: [] };
 
   const stockRows = sheetToObjects(getSheet('Stock'))       || [];
@@ -1034,14 +1112,17 @@ function getBranchOverview() {
 
 // ---------- Dashboard Stats ----------
 function getDashboardStats(p) {
-  const branchId = (p || {}).branch_id || '';
+  const auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
+  const role     = auth.user.role;
+  const branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
   const stats = { total_products: 0, low_stock_items: 0, total_stock_value: 0, total_stock_units: 0,
     pending_withdrawals: 0, completed_today: 0, month_imports: 0, pending_imports: 0, total_recipients: 0 };
 
   // Fix 5: use filterByBranch consistently (was inlining the same logic 4 times)
   const stockSheet = getSheet('Stock');
   if (stockSheet) {
-    const rows = filterByBranch(sheetToObjects(stockSheet), branchId);
+    const rows = filterByBranch(sheetToObjects(stockSheet), branchId, role);
     const stockMap = {};
     rows.forEach(function(r) {
       const pid = String(r.product_id);
@@ -1059,7 +1140,7 @@ function getDashboardStats(p) {
 
   const wSheet = getSheet('Withdrawals');
   if (wSheet) {
-    const rows = filterByBranch(sheetToObjects(wSheet), branchId);
+    const rows = filterByBranch(sheetToObjects(wSheet), branchId, role);
     stats.pending_withdrawals = rows.filter(r => r.status === 'pending').length;
     const todayStr = new Date().toDateString();
     stats.completed_today = rows.filter(r => r.status === 'completed' &&
@@ -1068,7 +1149,7 @@ function getDashboardStats(p) {
 
   const iSheet = getSheet('Imports');
   if (iSheet) {
-    const rows = filterByBranch(sheetToObjects(iSheet), branchId);
+    const rows = filterByBranch(sheetToObjects(iSheet), branchId, role);
     stats.pending_imports = rows.filter(r => r.status === 'pending').length;
     const m = new Date().getMonth(); const y = new Date().getFullYear();
     stats.month_imports = rows.filter(r => {
@@ -1078,7 +1159,7 @@ function getDashboardStats(p) {
 
   const rSheet = getSheet('Recipients');
   if (rSheet) {
-    const rows = filterByBranch(sheetToObjects(rSheet), branchId);
+    const rows = filterByBranch(sheetToObjects(rSheet), branchId, role);
     stats.total_recipients = rows.filter(r => r.status === 'active').length;
   }
 
@@ -1087,9 +1168,11 @@ function getDashboardStats(p) {
 
 // ---------- Monthly Report ----------
 function getMonthlyReport(params) {
+  const auth = requireAuth(params);
+  if (!auth.ok) return { success: false, message: auth.message };
   const month    = parseInt(params.month) - 1;
   const year     = parseInt(params.year);
-  const branchId = params.branch_id || '';
+  const branchId = effectiveBranchId(auth.user, params.branch_id);
   const report   = { month: params.month, year: params.year, imports: [], withdrawals: [], stock: [], totals: {} };
 
   const iSheet = getSheet('Imports');
@@ -1142,13 +1225,15 @@ function getMonthlyReport(params) {
 
 // ---------- Expenses ----------
 function getExpenses(p) {
+  var auth = requireAuth(p, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
   var sheet = getSheet('Expenses');
   if (!sheet) return { success: false, message: 'ไม่พบชีท Expenses' };
-  var branchId = (p || {}).branch_id || '';
+  var branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
   var month    = parseInt((p || {}).month);
   var year     = parseInt((p || {}).year);
   var rows     = sheetToObjects(sheet);
-  rows = filterByBranch(rows, branchId);
+  rows = filterByBranch(rows, branchId, auth.user.role);
   if (!isNaN(month) && !isNaN(year)) {
     rows = rows.filter(function(r) {
       var d = new Date(r.date);
@@ -1196,7 +1281,9 @@ function deleteExpense(data) {
   return { success: true, message: 'ลบรายการสำเร็จ' };
 }
 
-function getExpenseCategories() {
+function getExpenseCategories(p) {
+  var auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
   var sheet = getSheet('ExpenseCategories');
   if (!sheet) return { success: true, data: [] };
   var rows = sheetToObjects(sheet);

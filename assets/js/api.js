@@ -3,16 +3,24 @@
 // ============================================================
 
 const API = (() => {
+  // ดึง token จาก sessionStorage ผ่าน Auth (อาจยังไม่ login เช่นหน้า login → ส่งค่าว่าง)
+  function _token() {
+    try { return (typeof Auth !== 'undefined' && Auth.getToken()) || ''; }
+    catch (_) { return ''; }
+  }
+
   async function get(action, params = {}) {
-    const qs = new URLSearchParams({ action, ...params }).toString();
+    // แนบ token ทุกครั้ง — server gate read endpoints ด้วย requireAuth แล้ว
+    const qs = new URLSearchParams({ action, token: _token(), ...params }).toString();
     const res = await fetch(`${CONFIG.GAS_URL}?${qs}`, { redirect: 'follow' });
     return res.json();
   }
 
   async function post(data) {
+    // แนบ token ทุกครั้ง (ถ้า data มี token อยู่แล้วจะทับด้วยค่าเดียวกัน)
     const res = await fetch(CONFIG.GAS_URL, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ token: _token(), ...data }),
       // text/plain หลีกเลี่ยง CORS preflight
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       redirect: 'follow'
