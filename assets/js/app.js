@@ -10,6 +10,7 @@ const App = {
   imports: [],
   withdrawals: [],
   recipients: [],
+  branches: [],
   currentSection: 'dashboard',
   editingId: null
 };
@@ -278,7 +279,7 @@ function renderBranchOverview(branches) {
         <div class="branch-card-header">
           <i class="fas fa-store-alt me-2"></i><span class="branch-card-name">${b.name}</span>
           <button class="btn-branch-edit ms-auto" title="${t('th_manage')}"
-            onclick="openEditBranch('${b.id}','${(b.name||'').replace(/'/g,"\\'")}','${(b.address||'').replace(/'/g,"\\'")}','${(b.phone||'').replace(/'/g,"\\'")}')">
+            onclick="openEditBranch('${b.id}')">
             <i class="fas fa-edit"></i>
           </button>
           <button class="btn-branch-edit ms-1" title="${t('btn_delete_branch')}" style="background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.4);color:#fca5a5;"
@@ -316,11 +317,19 @@ function openBranchModal() {
   $('#modalBranchLabel').text(t('modal_add_branch'));
   new bootstrap.Modal('#modalBranch').show();
 }
-function openEditBranch(id, name, address, phone) {
+async function openEditBranch(id) {
+  // ดึงข้อมูลสาขาเต็ม (รวม name_en/tax_id ที่ overview ไม่ได้ส่งมา)
+  let b = (App.branches || []).find(x => String(x.id) === String(id));
+  if (!b) {
+    try { const r = await API.getBranches(); if (r.success) { App.branches = r.data || []; b = App.branches.find(x => String(x.id) === String(id)); } } catch (_) {}
+  }
+  b = b || {};
   _editingBranchId = id;
-  $('#branch-name').val(name);
-  $('#branch-address').val(address);
-  $('#branch-phone').val(phone);
+  $('#branch-name').val(b.name || '');
+  $('#branch-name-en').val(b.name_en || '');
+  $('#branch-tax-id').val(b.tax_id || '');
+  $('#branch-address').val(b.address || '');
+  $('#branch-phone').val(b.phone || '');
   $('#modalBranchLabel').text(t('modal_edit_branch'));
   new bootstrap.Modal('#modalBranch').show();
 }
@@ -338,13 +347,15 @@ async function confirmDeleteBranch(id, name) {
 async function saveBranch() {
   const name = $('#branch-name').val().trim();
   if (!name) { showToast('กรุณากรอกชื่อสาขา', 'warning'); return; }
-  const data = { name, address: $('#branch-address').val().trim(), phone: $('#branch-phone').val().trim() };
+  const data = { name, name_en: $('#branch-name-en').val().trim(), tax_id: $('#branch-tax-id').val().trim(),
+    address: $('#branch-address').val().trim(), phone: $('#branch-phone').val().trim() };
   if (_editingBranchId) data.id = _editingBranchId;
   $('#btn-save-branch').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');
   try {
     const res = _editingBranchId ? await API.updateBranch(data) : await API.addBranch(data);
     if (res.success) {
       showToast(_editingBranchId ? 'อัพเดทสาขาสำเร็จ!' : 'เพิ่มสาขาสำเร็จ!', 'success');
+      App.branches = []; // ล้าง cache ให้ดึงข้อมูลใหม่รอบหน้า
       bootstrap.Modal.getOrCreateInstance('#modalBranch').hide();
       loadBranchOverview();
     } else throw new Error(res.message);
@@ -922,6 +933,18 @@ async function loadWithdrawal() {
     App.withdrawals = res.data || [];
     renderWithdrawalTable(App.withdrawals);
   } catch (e) { showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger'); }
+
+  // โหลดข้อมูลประกอบสำหรับพิมพ์ใบกำกับภาษี (หัวกระดาษสาขา / ที่อยู่-เลขภาษีลูกค้า / หน่วยสินค้า)
+  try {
+    const [b, r, p] = await Promise.all([
+      (App.branches   && App.branches.length)   ? Promise.resolve(null) : API.getBranches(),
+      (App.recipients && App.recipients.length) ? Promise.resolve(null) : API.getRecipients(),
+      (App.products   && App.products.length)   ? Promise.resolve(null) : API.getProducts()
+    ]);
+    if (b && b.success) App.branches   = b.data || [];
+    if (r && r.success) App.recipients = r.data || [];
+    if (p && p.success) App.products   = p.data || [];
+  } catch (_) {}
 }
 
 function renderWithdrawalTable(data) {
@@ -1211,43 +1234,210 @@ function viewWithdrawal(id) {
   new bootstrap.Modal('#modalViewWd').show();
 }
 
+// แปลงจำนวนเงินเป็นข้อความภาษาไทย เช่น 1070 → "หนึ่งพันเจ็ดสิบบาทถ้วน"
+function bahtText(amount) {
+  amount = Math.round((parseFloat(amount) || 0) * 100) / 100;
+  const neg = amount < 0; amount = Math.abs(amount);
+  const baht = Math.floor(amount);
+  const satang = Math.round((amount - baht) * 100);
+  const txtNum = ['', 'หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก', 'เจ็ด', 'แปด', 'เก้า'];
+  const txtPos = ['', 'สิบ', 'ร้อย', 'พัน', 'หมื่น', 'แสน'];
+  // อ่านเลขกลุ่มละ 6 หลัก (1..999999) — "เอ็ด" ใช้เมื่อหลักหน่วยเป็น 1 และกลุ่มมีหลักสูงกว่า
+  function readGroup(g) {
+    let r = ''; const sig = g.replace(/^0+/, '');
+    for (let i = 0; i < g.length; i++) {
+      const d = +g[i]; const pos = g.length - i - 1;
+      if (d === 0) continue;
+      if (pos === 1) { r += (d === 1) ? 'สิบ' : (d === 2) ? 'ยี่สิบ' : txtNum[d] + 'สิบ'; }
+      else if (pos === 0 && d === 1 && sig.length > 1) { r += 'เอ็ด'; }
+      else { r += txtNum[d] + txtPos[pos]; }
+    }
+    return r;
+  }
+  function readInt(n) {
+    let s = String(n);
+    if (s === '0') return 'ศูนย์';
+    const groups = [];
+    while (s.length > 0) { groups.unshift(s.slice(-6)); s = s.slice(0, -6); }
+    let r = '';
+    for (let g = 0; g < groups.length; g++) {
+      if (parseInt(groups[g], 10) !== 0) r += readGroup(groups[g]) + 'ล้าน'.repeat(groups.length - 1 - g);
+    }
+    return r;
+  }
+  let result = '';
+  if (baht > 0) result += readInt(baht) + 'บาท';
+  if (satang > 0) result += readInt(satang) + 'สตางค์';
+  else result += baht > 0 ? 'ถ้วน' : 'ศูนย์บาทถ้วน';
+  return (neg ? 'ลบ' : '') + result;
+}
+
+// พิมพ์ใบกำกับภาษี/ใบส่งสินค้า/ใบแจ้งหนี้ — หัวกระดาษดึงจากสาขา (Branches), ราคารวม VAT แล้วแตกออก
 function printReceipt(w) {
   const items = Array.isArray(w.items) ? w.items : [];
-  const win = window.open('', '_blank', 'width=600,height=800');
+  const money = (n) => (parseFloat(n) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // ผู้ขาย (หัวกระดาษ) = สาขาที่ออกเอกสาร
+  const branch = (App.branches || []).find(b => String(b.id) === String(w.branch_id)) || {};
+  const sellerTh   = branch.name || (App.user && App.user.branch_name) || CONFIG.APP_NAME;
+  const sellerEn   = branch.name_en || '';
+  const sellerAddr = branch.address || '';
+  const sellerTel  = branch.phone || '';
+  const sellerTax  = branch.tax_id || '';
+
+  // ลูกค้า = ผู้รับสินค้า
+  const rcp      = (App.recipients || []).find(r => String(r.id) === String(w.recipient_id)) || {};
+  const custName = w.recipient_name || rcp.name || '';
+  const custAddr = rcp.address || '';
+  const custTax  = rcp.tax_id || '';
+
+  // หน่วยสินค้า — ดึงจาก Products
+  const prodById = {};
+  (App.products || []).forEach(p => { prodById[String(p.id)] = p; });
+
+  // ราคารวม VAT แล้ว → แตก VAT ออก (7%)
+  const grand        = Math.round((parseFloat(w.total_value) || 0) * 100) / 100; // ยอดสุทธิ (รวม VAT)
+  const preVat       = Math.round((grand / 1.07) * 100) / 100;                   // รวมเงิน (ก่อน VAT)
+  const vat          = Math.round((grand - preVat) * 100) / 100;                 // VAT 7%
+  const deposit      = 0;                                                        // เงินมัดจำ (เว้นว่าง/กรอกมือ)
+  const afterDeposit = preVat - deposit;
+
+  // เลขที่เอกสาร + วันที่
+  const d = new Date(w.withdrawal_date || w.created_at || Date.now());
+  const valid = !isNaN(d.getTime());
+  const docNo   = 'IV' + (valid ? d.getFullYear() : '') + (valid ? String(d.getMonth() + 1).padStart(2, '0') : '') + String(w.id).replace(/\D/g, '').slice(-4);
+  const dateStr = valid ? `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}` : '';
+
+  // แถวสินค้า (ราคา/จำนวนเงิน = ก่อน VAT เพื่อให้ผลรวม = "รวมเงิน")
+  const minRows = 10;
+  let rowsHtml = items.map((it, idx) => {
+    const qty     = parseFloat(it.quantity) || 0;
+    const unitInc = parseFloat(it.unit_price) || 0;
+    const unitEx  = unitInc / 1.07;
+    const lineEx  = qty * unitEx;
+    const unit    = it.unit || (prodById[String(it.product_id)] && prodById[String(it.product_id)].unit) || '';
+    return `<tr>
+      <td class="c">${idx + 1}</td>
+      <td></td>
+      <td>${it.product_name || it.product_id || ''}</td>
+      <td class="c">${qty.toLocaleString('th-TH')}</td>
+      <td class="c">${unit}</td>
+      <td class="r">${money(unitEx)}</td>
+      <td class="r">${money(lineEx)}</td>
+    </tr>`;
+  }).join('');
+  for (let i = items.length; i < minRows; i++) {
+    rowsHtml += '<tr><td class="c">&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>';
+  }
+
+  const win = window.open('', '_blank', 'width=820,height=1000');
   win.document.write(`<!DOCTYPE html><html lang="th"><head>
-    <meta charset="UTF-8"><title>ใบเบิกสินค้า ${w.id}</title>
+    <meta charset="UTF-8"><title>ใบกำกับภาษี ${docNo}</title>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>body{font-family:Sarabun,sans-serif;padding:30px;max-width:600px;margin:0 auto}
-    h2{text-align:center;font-size:1.5rem;margin-bottom:4px}.sub{text-align:center;color:#666;margin-bottom:24px}
-    table{width:100%;border-collapse:collapse;margin:16px 0}th,td{border:1px solid #ddd;padding:8px 10px;font-size:.9rem}
-    th{background:#f5f5f5;font-weight:700}.text-right{text-align:right}.total{font-weight:700;font-size:1rem}
-    .meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;font-size:.9rem}
-    .sign-area{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px;text-align:center}
-    .sign-line{border-top:1px solid #333;padding-top:8px;margin-top:40px}
-    @media print{.no-print{display:none}}</style></head>
-    <body>
-    <h2>ใบเบิกสินค้า</h2>
-    <div class="sub">${CONFIG.APP_NAME}</div>
-    <div class="meta">
-      <div><strong>รหัส:</strong> ${w.id}</div>
-      <div><strong>วันที่:</strong> ${Fmt.date(w.withdrawal_date || w.created_at)}</div>
-      <div><strong>ผู้รับ:</strong> ${w.recipient_name || '-'}</div>
-      <div><strong>แผนก:</strong> ${w.department || '-'}</div>
-      <div><strong>ประเภท:</strong> ${w.type === 'return' ? 'คืนสินค้า' : 'เบิกสินค้า'}</div>
-      <div><strong>สถานะ:</strong> ${statusLabel(w.status)}</div>
+    <style>
+      *{box-sizing:border-box}
+      body{font-family:Sarabun,sans-serif;color:#111;margin:0;padding:18px;font-size:13px}
+      .sheet{max-width:780px;margin:0 auto}
+      .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+      .seller h1{font-size:20px;font-weight:700;margin:0}
+      .seller h2{font-size:17px;font-weight:700;margin:0 0 4px}
+      .seller .ln{font-size:11.5px;line-height:1.5;color:#222}
+      .badge-box{border:1px solid #e07b1a;border-radius:6px;padding:4px 10px;font-size:12px;white-space:nowrap}
+      .doctype{border:2px solid #e07b1a;border-radius:8px;text-align:center;padding:6px;margin:12px auto;max-width:430px;font-weight:700}
+      .doctype .en{font-size:11px;font-weight:600;color:#333}
+      .cust{display:flex;justify-content:space-between;gap:16px;margin-top:6px;font-size:12.5px}
+      .cust .lbl{color:#0a3d91;font-weight:600}
+      .cust .val{color:#0a3d91}
+      .docno{color:#c0392b;font-weight:700}
+      .chk{display:inline-block;width:13px;height:13px;border:1px solid #333;text-align:center;line-height:12px;font-size:11px;margin-right:3px;vertical-align:middle}
+      table.items{width:100%;border-collapse:collapse;margin-top:10px}
+      table.items th,table.items td{border:1px solid #333;padding:4px 6px;font-size:12px}
+      table.items thead th{background:#e07b1a;color:#fff;text-align:center;font-weight:700}
+      table.items td.c{text-align:center}table.items td.r{text-align:right}
+      table.items tbody td{height:22px}
+      .bottom{display:flex;border:1px solid #333;border-top:none}
+      .bottom .left{flex:1.35;border-right:1px solid #333;padding:6px 8px}
+      .bottom .right{flex:1}
+      .words{border:1px solid #333;background:#f1eee9;padding:6px 8px;font-weight:600;min-height:34px}
+      .note{font-size:10.5px;color:#333;margin-top:6px;line-height:1.45}
+      .totrow{display:flex;justify-content:space-between;border-bottom:1px solid #333;padding:4px 8px}
+      .totrow:last-child{border-bottom:none}
+      .totrow .k{font-size:11.5px}.totrow .k small{color:#555;font-size:9.5px;display:block}
+      .totrow .v{text-align:right;font-weight:600;min-width:90px}
+      .grand{background:#e07b1a;color:#fff}.grand .v{font-weight:700}
+      .vatcell{display:flex;align-items:center;gap:6px}
+      .vatbox{border:1px solid #333;padding:0 6px;font-size:11px}
+      .signs{display:flex;justify-content:space-between;gap:30px;margin-top:34px;text-align:center;font-size:12px}
+      .signs > div{flex:1}
+      .sigln{border-top:1px dotted #333;margin:34px 12px 4px}
+      .toolbar{text-align:center;margin-top:16px}
+      .toolbar button{padding:8px 18px;font-size:14px;cursor:pointer;border:1px solid #888;border-radius:6px;background:#fff}
+      @media print{.no-print{display:none}body{padding:0}@page{size:A4;margin:10mm}}
+    </style></head><body>
+    <div class="sheet">
+      <div class="top">
+        <div class="seller">
+          ${sellerEn ? `<h1>${sellerTh}</h1><h2>${sellerEn}</h2>` : `<h1>${sellerTh}</h1>`}
+          ${sellerAddr ? `<div class="ln">${sellerAddr}</div>` : ''}
+          <div class="ln">${sellerTel ? 'โทร. ' + sellerTel : ''}${sellerTel && sellerTax ? '&nbsp;&nbsp;&nbsp;' : ''}${sellerTax ? 'เลขประจำตัวผู้เสียภาษี ' + sellerTax : ''}</div>
+        </div>
+        <div class="badge-box">สำหรับบริษัท</div>
+      </div>
+
+      <div class="doctype">
+        ต้นฉบับใบกำกับภาษี / ใบส่งสินค้า / ใบแจ้งหนี้
+        <div class="en">ORIGINAL TAX INVOICE / DELIVERY ORDER / INVOICE</div>
+      </div>
+
+      <div class="cust">
+        <div style="flex:1.4">
+          <div><span class="lbl">นามลูกค้า</span> <span class="val">${custName}</span></div>
+          <div><span class="lbl">ที่อยู่</span> <span class="val">${custAddr}</span></div>
+          <div><span class="lbl">เลขประจำตัวผู้เสียภาษี</span> <span class="val">${custTax}</span>
+            &nbsp;&nbsp;<span class="chk">X</span>สำนักงานใหญ่ &nbsp;<span class="chk">&nbsp;</span>สาขาที่</div>
+        </div>
+        <div style="text-align:right;white-space:nowrap">
+          <div>เลขที่ <span class="docno">${docNo}</span></div>
+          <div>วันที่ <span class="docno">${dateStr}</span></div>
+        </div>
+      </div>
+
+      <table class="items">
+        <thead><tr>
+          <th style="width:6%">ลำดับ</th><th style="width:12%">PO No.</th><th>รายละเอียด</th>
+          <th style="width:9%">จำนวน</th><th style="width:9%">หน่วย</th>
+          <th style="width:13%">ราคา/หน่วย</th><th style="width:14%">จำนวนเงิน</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+
+      <div class="bottom">
+        <div class="left">
+          <div class="words">ตัวอักษร&nbsp;&nbsp;( ${bahtText(grand)} )</div>
+          <div class="note">
+            หมายเหตุ :<br>
+            1. กรณีชำระเงินโดยเช็คกรุณาสั่งจ่ายขีดคร่อมในนาม "${sellerTh}" เท่านั้น<br>
+            2. สินค้าตามรายการข้างต้นแม้ได้ส่งมอบให้แก่ผู้ซื้อแล้ว ก็ยังถือเป็นทรัพย์สินของผู้ขายจนกว่าผู้ซื้อได้ชำระเงินครบเรียบร้อยแล้ว<br>
+            3. บริษัทฯ ขอสงวนสิทธิ์ในการแก้ไขใบกำกับภาษีภายใน 7 วัน นับจากวันที่ระบุในใบกำกับภาษี (ผิด ตก ยกเว้น E. &amp; O.E.)
+          </div>
+        </div>
+        <div class="right">
+          <div class="totrow"><div class="k">รวมเงิน<small>TOTAL AMOUNT</small></div><div class="v">${money(preVat)}</div></div>
+          <div class="totrow"><div class="k">หัก เงินมัดจำ<small>DEPOSIT</small></div><div class="v">${deposit ? money(deposit) : '-'}</div></div>
+          <div class="totrow"><div class="k">มูลค่าสินค้าหลังหักเงินมัดจำ<small>TOTAL AMOUNT AFTER DEPOSIT</small></div><div class="v">${money(afterDeposit)}</div></div>
+          <div class="totrow"><div class="k vatcell">ภาษีมูลค่าเพิ่ม <span class="vatbox">7%</span><small>VAT</small></div><div class="v">${money(vat)}</div></div>
+          <div class="totrow grand"><div class="k">ยอดเงินสุทธิ<small>GRAND TOTAL</small></div><div class="v">${money(grand)}</div></div>
+        </div>
+      </div>
+
+      <div class="signs">
+        <div><div class="sigln"></div>ผู้รับสินค้า / ผู้รับวางบิล<br><span style="font-size:10px;color:#666">วันที่ ........./........./.........</span></div>
+        <div><div class="sigln"></div>ผู้ส่งสินค้า<br><span style="font-size:10px;color:#666">${w.created_by || ''}</span></div>
+        <div><div class="sigln"></div>ผู้มีอำนาจลงนาม<br><span style="font-size:10px;color:#666">${sellerTh}</span></div>
+      </div>
+
+      <div class="toolbar no-print"><button onclick="window.print()">🖨️ พิมพ์</button></div>
     </div>
-    <table><thead><tr><th>สินค้า</th><th>จำนวน</th><th class="text-right">ราคา/ชิ้น</th><th class="text-right">รวม</th></tr></thead>
-    <tbody>${items.map(i => `<tr><td>${i.product_name || i.product_id}</td><td>${i.quantity}</td>
-      <td class="text-right">${Fmt.currency(i.unit_price || 0)}</td>
-      <td class="text-right">${Fmt.currency((i.quantity || 0) * (i.unit_price || 0))}</td></tr>`).join('')}
-    <tr class="total"><td colspan="3" class="text-right">รวมทั้งหมด</td>
-    <td class="text-right">${Fmt.currency(w.total_value)}</td></tr></tbody></table>
-    ${w.notes ? `<p><strong>หมายเหตุ:</strong> ${w.notes}</p>` : ''}
-    <div class="sign-area">
-      <div><div class="sign-line">ผู้เบิก</div><div>${w.recipient_name || ''}</div></div>
-      <div><div class="sign-line">ผู้อนุมัติ</div><div>${w.created_by || ''}</div></div>
-    </div>
-    <div style="text-align:center;margin-top:20px"><button class="no-print" onclick="window.print()">🖨️ พิมพ์</button></div>
     </body></html>`);
   win.document.close();
 }
@@ -1299,6 +1489,8 @@ function openEditRecipient(id) {
   $('#rcp-pos').val(r.position);
   $('#rcp-phone').val(r.phone);
   $('#rcp-email').val(r.email);
+  $('#rcp-tax-id').val(r.tax_id);
+  $('#rcp-address').val(r.address);
   $('#rcp-notes').val(r.notes);
   $('#modalRecipientLabel').text('แก้ไขผู้รับสินค้า');
   new bootstrap.Modal('#modalRecipient').show();
@@ -1308,7 +1500,8 @@ async function saveRecipient() {
   const name = $('#rcp-name').val().trim();
   if (!name) { showToast('กรุณากรอกชื่อผู้รับ', 'warning'); return; }
   const data = { name, department: $('#rcp-dept').val(), position: $('#rcp-pos').val(),
-    phone: $('#rcp-phone').val(), email: $('#rcp-email').val(), notes: $('#rcp-notes').val() };
+    phone: $('#rcp-phone').val(), email: $('#rcp-email').val(), notes: $('#rcp-notes').val(),
+    tax_id: $('#rcp-tax-id').val().trim(), address: $('#rcp-address').val().trim() };
   if (App.editingId) data.id = App.editingId;
 
   $('#btn-save-rcp').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');

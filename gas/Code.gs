@@ -12,14 +12,14 @@ function setupAllSheets() {
   const ss = getSpreadsheet();
 
   const SHEET_DEFS = {
-    'Branches':    ['id','name','address','phone','created_at','status'],
+    'Branches':    ['id','name','address','phone','created_at','status','name_en','tax_id'],
     'Users':       ['id','username','password','name','role','status','created_at','branch_id'],
     'Tokens':      ['token','user_id','username','created_at','expires_at'],
     'Products':    ['id','code','name','category','unit','cost_price','selling_price','min_stock','notes','created_at','status','branch_id'],
     'Stock':       ['id','product_id','product_name','product_code','unit','quantity','cost_price','min_stock','last_updated','branch_id'],
     'Imports':     ['id','order_date','supplier','items','yuan_amount','exchange_rate','base_cost_thb','freight_cost','import_costs','additional_costs','total_cost','status','notes','created_at','created_by','branch_id'],
     'Withdrawals': ['id','withdrawal_date','recipient_id','recipient_name','department','items','total_value','type','notes','status','created_by','created_at','branch_id'],
-    'Recipients':  ['id','name','department','position','phone','email','notes','status','created_at','branch_id'],
+    'Recipients':  ['id','name','department','position','phone','email','notes','status','created_at','branch_id','tax_id','address'],
     'Expenses':    ['id','date','category','description','amount','branch_id','created_at','created_by'],
     'ExpenseCategories': ['name']
   };
@@ -51,20 +51,21 @@ function setupAllSheets() {
       return;
     }
 
-    // มีข้อมูลแล้ว → ตรวจและเพิ่ม branch_id ถ้าขาด
-    if (!NO_BRANCH_ID.has(sheetName)) {
-      const existingHdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
-        .map(function(h) { return String(h).trim(); });
-      if (!existingHdrs.includes('branch_id')) {
-        const nextCol = sheet.getLastColumn() + 1;
-        sheet.getRange(1, nextCol).setValue('branch_id');
-        _styleHeader(sheet, nextCol); // style ทั้งแถว header ใหม่
-        log.push('🔧 ' + sheetName + ': เพิ่มคอลัมน์ branch_id (คอลัมน์ที่ ' + nextCol + ')');
-      } else {
-        log.push('☑️  ' + sheetName + ': ครบแล้ว');
-      }
+    // มีข้อมูลแล้ว → เติมคอลัมน์ที่ขาดตาม schema (เช่น branch_id, name_en, tax_id, address)
+    // append ต่อท้ายตามลำดับ schema เสมอ → ปลอดภัยกับ appendRow ที่อิงตำแหน่งคอลัมน์
+    const existingHdrs = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function(h) { return String(h).trim(); });
+    const missing = headers.filter(function(h) {
+      if (h === 'branch_id' && NO_BRANCH_ID.has(sheetName)) return false; // sheet นี้ไม่ต้องการ branch_id
+      return existingHdrs.indexOf(h) === -1;
+    });
+    if (missing.length) {
+      let nextCol = sheet.getLastColumn();
+      missing.forEach(function(h) { nextCol++; sheet.getRange(1, nextCol).setValue(h); });
+      _styleHeader(sheet, nextCol); // style ทั้งแถว header ใหม่
+      log.push('🔧 ' + sheetName + ': เพิ่มคอลัมน์ ' + missing.join(', ') + ' (รวม ' + nextCol + ' คอลัมน์)');
     } else {
-      log.push('☑️  ' + sheetName + ': ครบแล้ว (ไม่ต้องการ branch_id)');
+      log.push('☑️  ' + sheetName + ': ครบแล้ว');
     }
   });
 
@@ -926,7 +927,8 @@ function addRecipient(data) {
   const branchId = effectiveBranchId(auth.user, data.branch_id);
   // Fix 2: "'" + (data.phone || '') — parens required, otherwise "'" + undefined → "'undefined"
   sheet.appendRow([id, data.name, data.department || '', data.position || '',
-    "'" + (data.phone || ''), data.email || '', data.notes || '', 'active', now(), branchId]);
+    "'" + (data.phone || ''), data.email || '', data.notes || '', 'active', now(), branchId,
+    data.tax_id || '', data.address || '']);
   return { success: true, id, message: 'เพิ่มผู้รับสินค้าสำเร็จ' };
 }
 
@@ -1020,7 +1022,8 @@ function addBranch(data) {
   const sheet = getSheet('Branches');
   if (!sheet) return { success: false, message: 'ไม่พบชีท Branches กรุณาสร้างชีทในกูเกิลชีทก่อน' };
   const id = uid('BRN');
-  sheet.appendRow([id, data.name || '', data.address || '', data.phone || '', now(), 'active']);
+  sheet.appendRow([id, data.name || '', data.address || '', data.phone || '', now(), 'active',
+    data.name_en || '', data.tax_id || '']);
   return { success: true, id, message: 'เพิ่มสาขาสำเร็จ' };
 }
 
