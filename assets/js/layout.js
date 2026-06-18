@@ -18,6 +18,7 @@ function initLayout(activePage) {
 
   const menuWithdrawal = isAdmin ? [
     { key: 'withdrawal', icon: 'fa-file-export', label: _t('nav_withdrawal'), url: '/dashboard/withdrawal/' },
+    { key: 'transfer',   icon: 'fa-dolly',       label: _t('nav_transfer'),   url: '/dashboard/transfer/' },
     { key: 'recipients', icon: 'fa-users',       label: _t('nav_recipients'), url: '/dashboard/recipients/' }
   ] : [
     { key: 'withdrawal', icon: 'fa-file-export', label: _t('nav_withdrawal'), url: '/dashboard/withdrawal/' }

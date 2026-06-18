@@ -21,6 +21,7 @@
 | `/dashboard/stock/` | `stock` | `loadStock()` |
 | `/dashboard/stock/imports/` | `stock-imports` | `loadStockImportHistory()` |
 | `/dashboard/withdrawal/` | `withdrawal` | `loadWithdrawal()` |
+| `/dashboard/transfer/` | `transfer` | `loadTransfer()` |
 | `/dashboard/recipients/` | `recipients` | `loadRecipients()` |
 | `/dashboard/report/` | `report` | `initReports()` |
 | `/dashboard/products/` | `products` | `loadProducts()` |
@@ -53,8 +54,9 @@ Tokens:      token, user_id, username, created_at, expires_at
 Products:    id, code, name, category, unit, cost_price, selling_price, min_stock, notes, created_at, status, branch_id
 Stock:       id, product_id, product_name, product_code, unit, quantity, cost_price, min_stock, last_updated, branch_id
 Imports:     id, order_date, supplier, items, yuan_amount, exchange_rate, base_cost_thb, freight_cost, import_costs, additional_costs, total_cost, status, notes, created_at, created_by, branch_id
-Withdrawals: id, withdrawal_date, recipient_id, recipient_name, department, items, total_value, type, notes, status, created_by, created_at, branch_id
-Recipients:  id, name, department, position, phone, email, notes, status, created_at, branch_id
+Withdrawals: id, withdrawal_date, recipient_id, recipient_name, department, items, total_value, type, notes, status, created_by, created_at, branch_id, doc_no, deposit
+Recipients:  id, name, department, position, phone, email, notes, status, created_at, branch_id, tax_id, address
+Transfers:   id, transfer_date, product_id, product_name, product_code, quantity, from_branch_id, to_branch_id, transport_cost, labor_cost, unit_cost, dest_unit_cost, total_value, notes, created_by, created_at
 ```
 
 - `items` ใน Imports และ Withdrawals เก็บเป็น **JSON string** ใน cell
@@ -73,6 +75,20 @@ Recipients:  id, name, department, position, phone, email, notes, status, create
 
 ---
 
+## Transfer System (โยกของข้ามโกดัง = ข้ามสาขา)
+
+- หน้า `/dashboard/transfer/` (admin + superadmin; **staff เข้าไม่ได้**). admin โยกได้เฉพาะ **จากสาขาตัวเอง** (frontend ล็อก + backend `addTransfer` บังคับ); superadmin โยกจากสาขาใดก็ได้
+- `addTransfer(data)` ใน GAS:
+  1. ตรวจสต็อกต้นทางพอ + คำนวณต้นทุน FIFO ของจำนวนที่ตัด (`product_id` unique ต่อสาขา → ตัดเฉพาะสาขาต้นทาง)
+  2. `deductStockFIFO(productId, qty)` ตัดสาขาต้นทาง
+  3. หาสินค้าปลายทางด้วย **`code`** ในสาขาปลายทาง — ถ้าไม่มีจะ **สร้าง Product ใหม่** ในสาขาปลายทาง (copy ชื่อ/code/unit/selling_price/min_stock)
+  4. `addStockLot(destProductId, qty, destUnitCost, toBranch)` — `destUnitCost = (costSum + ค่าขนส่ง + ค่ายกแรงงาน) / qty` (ค่าขนส่ง+ค่าแรง **capitalize เข้าต้นทุนปลายทาง**)
+  5. append แถวประวัติใน sheet `Transfers`
+- **ต้องรัน `setupAllSheets()` ใหม่** เพื่อสร้าง sheet `Transfers`
+- preview ต้นทุนปลายทางในโมดอลเป็น **ค่าประมาณ** (ใช้ `cost_price` weighted-avg จาก getStock); ค่าจริงคำนวณ FIFO ฝั่ง server ตอนบันทึก
+
+---
+
 ## Import Flow (ค่าใช้จ่าย)
 
 ```
@@ -82,11 +98,14 @@ PO สร้าง (purchase modal)
   └─ status: pending
 
 รับสินค้า (receive modal — ทั้ง /purchase/ และ /receive/)
+  └─ rc-branch = สาขา (โกดัง) ที่จะรับเข้า — superadmin เลือกได้ / admin ล็อกสาขาตัวเอง (จำเป็น)
   └─ rc-freight = ค่า Freight (กรอกตอนนี้)
   └─ rc-customs_duty, rc-clearance_fee, rc-transport_fee, rc-warehouse_fee, rc-vat
   └─ total_cost = base_cost_thb + freight_cost + additional_costs
-  └─ status: received → addStockLot() สำหรับทุก item
+  └─ status: received → addStockLot() สำหรับทุก item ลง "สาขาที่เลือกรับ" (receive_branch_id)
        unit_cost ต่อชิ้น = (unit_price_yuan × rate) + (freight + additional_costs) / total_qty_all_items
+       ถ้ารับเข้าสาขาที่ไม่ใช่สาขาของ PO → resolveProductInBranch() จับคู่/สร้างสินค้าในสาขานั้นด้วย code
+       (admin รับได้เฉพาะ PO ของสาขาตัวเอง — บังคับฝั่ง server)
 
 ประวัตินำเข้าต่อสินค้า (/dashboard/stock/imports/?id=X&name=Y)
   └─ เปิดจาก stock table → openStockImportHistory()
@@ -107,9 +126,11 @@ PO สร้าง (purchase modal)
 | `uid(prefix)` | สร้าง ID เช่น `IMP-20250101-abc123` |
 | `addStockLot` | เพิ่ม lot ใหม่ใน Stock |
 | `deductStockFIFO` | ตัดสต็อค FIFO |
+| `resolveProductInBranch(srcProd, branchId, label)` | หา/สร้าง product ในสาขาที่ระบุ (จับคู่ด้วย code) — ใช้ตอนรับ/โยกข้ามสาขา |
 | `addImportExtraCost` | บวกต้นทุนแฝงกระจาย lot ที่เหลือ |
 | `getStockImportHistory` | filter Imports.items → history ต่อ product |
-| `updateImportStatus` | อัพเดท status + บันทึก freight/costs/total |
+| `updateImportStatus` | อัพเดท status + freight/costs/total; รับเข้า `receive_branch_id` (สาขาที่รับ) |
+| `getTransfers` / `addTransfer` | โยกของข้ามสาขา (ดู Transfer System) |
 
 GAS endpoint เดียว: `doGet` (action ใน query string) / `doPost` (action ใน JSON body)
 
@@ -154,8 +175,9 @@ API.getProducts()
 API.addProduct(d) / updateProduct(d) / deleteProduct(id)
 API.getStock()
 API.getImports() / addImport(d) / updateImportStatus(id, status, import_costs, freight_cost)
-API.getWithdrawals() / addWithdrawal(d) / updateWithdrawalStatus(id, status) / partialReturn(d)
+API.getWithdrawals() / addWithdrawal(d) / updateWithdrawalStatus(id, status) / updateWithdrawal(d) / partialReturn(d)
 API.getRecipients() / addRecipient(d) / updateRecipient(d)
+API.getTransfers() / addTransfer(d)
 API.getBranches() / addBranch(d) / updateBranch(d) / deleteBranch(id) / getBranchOverview()
 API.getUsers() / addUser(d) / updateUser(d)
 API.getDashboardStats() / getMonthlyReport(month, year)
@@ -191,3 +213,15 @@ pending → in-transit → received
 
 - `received` เท่านั้นที่ trigger `addStockLot()` และ lock ค่าใช้จ่าย
 - เพิ่มต้นทุนแฝง (`addImportExtraCost`) ทำได้เฉพาะ import ที่ `status === 'received'`
+
+---
+
+## Editable Tax Invoice (preview)
+
+- `printReceipt(w)` เปิดหน้าต่าง preview (`window.open` + `document.write`) — แก้ไขได้ทุกช่องในเอกสาร
+- ปุ่มใน toolbar: **แก้ไข** (toggle `body.editing`) → **บันทึก** (`saveBill()`) → **พิมพ์**
+- ช่องแก้ไข: ลูกค้า (ชื่อ/ที่อยู่/เลขภาษี = `contenteditable [data-edit]`), เลขที่เอกสาร, วันที่, เงินมัดจำ, รายการสินค้า (qty/หน่วย/ราคา + เพิ่ม/ลบแถว). หัวกระดาษผู้ขายมาจาก Branches (แก้ที่หน้าจัดการสาขา)
+- ราคา/หน่วยในใบ = **ก่อน VAT**; `recompute()` รวมแถว → VAT 7% → ยอดสุทธิ (คอลัมน์รวมลงตัวเสมอ)
+- บันทึก: popup เรียก `window.opener.saveEditedInvoice(payload)` (ต้องเป็น classic script — function เป็น global บน window) → `API.updateWithdrawal` (เก็บ items เป็นราคา**รวม VAT**, server คำนวณ `total_value`) + `API.updateRecipient` (ที่อยู่/เลขภาษีลูกค้า)
+- ⚠️ การแก้รายการสินค้า **ไม่** ปรับสต็อก (FIFO) — เป็นการแก้เอกสารบิลเท่านั้น
+- ต้องรัน `setupAllSheets()` ใหม่เพื่อเพิ่มคอลัมน์ `doc_no`, `deposit` ใน Withdrawals (migration เติมคอลัมน์ที่ขาดอัตโนมัติ)

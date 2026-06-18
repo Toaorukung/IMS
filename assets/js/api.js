@@ -45,8 +45,8 @@ const API = (() => {
     // Imports
     getImports:          ()           => get('getImports', { branch_id: Auth.getBranchId() }),
     addImport:           (d)          => post({ action: 'addImport', branch_id: Auth.getBranchId(), ...d }),
-    updateImportStatus:  (id, status, import_costs, freight_cost) =>
-      post({ action: 'updateImportStatus', id, status, import_costs, freight_cost }),
+    updateImportStatus:  (id, status, import_costs, freight_cost, receive_branch_id) =>
+      post({ action: 'updateImportStatus', id, status, import_costs, freight_cost, receive_branch_id }),
     updateImport:        (d)  => post({ action: 'updateImport',  token: Auth.getToken(), ...d }),
     deleteImport:        (id) => post({ action: 'deleteImport',  token: Auth.getToken(), id }),
 
@@ -54,7 +54,12 @@ const API = (() => {
     getWithdrawals:         ()           => get('getWithdrawals', { branch_id: Auth.getBranchId() }),
     addWithdrawal:          (d)          => post({ action: 'addWithdrawal', branch_id: Auth.getBranchId(), ...d }),
     updateWithdrawalStatus: (id, status) => post({ action: 'updateWithdrawalStatus', id, status }),
+    updateWithdrawal:        (d)          => post({ action: 'updateWithdrawal', ...d }),
     partialReturn:           (d)          => post({ action: 'partialReturn', ...d }),
+
+    // Transfers (โยกของข้ามโกดัง/สาขา)
+    getTransfers: ()  => get('getTransfers', { branch_id: Auth.getBranchId() }),
+    addTransfer:  (d) => post({ action: 'addTransfer', ...d }),
 
     // Recipients
     getRecipients:   ()  => get('getRecipients',  { branch_id: Auth.getBranchId() }),

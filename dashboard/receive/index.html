@@ -124,6 +124,10 @@
       <div class="modal-body">
         <input type="hidden" id="rc-po-id">
         <div class="alert alert-info mb-3">อ้างอิง PO: <strong id="rc-po-ref">-</strong></div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">รับเข้าสาขา (โกดัง) <span class="text-danger">*</span></label>
+          <select class="form-select" id="rc-branch"><option value="">-- เลือกสาขาที่จะรับ --</option></select>
+        </div>
         <div class="row g-3">
           <div class="col-12">
             <div class="cost-row mb-2"><span class="fw-semibold">ราคาสินค้า (฿)</span><span class="fw-bold text-primary" id="rc-base-thb">฿0.00</span></div>
@@ -145,7 +149,7 @@
             <input type="number" class="form-control" id="rc-transport_fee" value="0" min="0">
           </div>
           <div class="col-md-6">
-            <label class="form-label">ค่าโกดัง (฿)</label>
+            <label class="form-label">ค่าแพคเกจจิ้ง (฿)</label>
             <input type="number" class="form-control" id="rc-warehouse_fee" value="0" min="0">
           </div>
           <div class="col-md-6">

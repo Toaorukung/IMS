@@ -11,6 +11,7 @@ const App = {
   withdrawals: [],
   recipients: [],
   branches: [],
+  transfers: [],
   currentSection: 'dashboard',
   editingId: null
 };
@@ -92,6 +93,7 @@ $(document).ready(async function () {
     case 'stock':         loadStock();              break;
     case 'stock-imports': loadStockImportHistory(); break;
     case 'withdrawal': loadWithdrawal(); if (urlParams.get('new') === '1') setTimeout(openWithdrawalModal, 600); break;
+    case 'transfer':   loadTransfer();   if (urlParams.get('new') === '1') setTimeout(openTransferModal, 600); break;
     case 'recipients': loadRecipients(); break;
     case 'report':     initReports();    break;
     case 'expenses':   loadExpenses();   break;
@@ -120,6 +122,7 @@ function loadSection(name) {
     receive:    '/dashboard/receive/',
     stock:      '/dashboard/stock/',
     withdrawal: '/dashboard/withdrawal/',
+    transfer:   '/dashboard/transfer/',
     recipients: '/dashboard/recipients/',
     reports:    '/dashboard/report/',
     expenses:   '/dashboard/expenses/',
@@ -631,7 +634,7 @@ function viewImport(id) {
       <div class="cost-row"><span>ภาษีนำเข้า</span><span>${Fmt.currency(costs.customs_duty || 0)}</span></div>
       <div class="cost-row"><span>ค่าเคลียร์ริ่ง</span><span>${Fmt.currency(costs.clearance_fee || 0)}</span></div>
       <div class="cost-row"><span>ค่าขนส่ง</span><span>${Fmt.currency(costs.transport_fee || 0)}</span></div>
-      <div class="cost-row"><span>ค่าโกดัง</span><span>${Fmt.currency(costs.warehouse_fee || 0)}</span></div>
+      <div class="cost-row"><span>ค่าแพคเกจจิ้ง</span><span>${Fmt.currency(costs.warehouse_fee || 0)}</span></div>
       <div class="cost-row"><span>ค่า VAT</span><span>${Fmt.currency(costs.vat || 0)}</span></div>
       <div class="cost-row total"><span>ต้นทุนรวมทั้งหมด</span><span>${Fmt.currency(rec.total_cost)}</span></div>
     </div>
@@ -667,6 +670,22 @@ async function markReceived(id) {
   // Open receive modal
   $('#rc-po-id').val(id);
   $('#rc-po-ref').text(id + ' – ' + rec.supplier);
+
+  // เลือกสาขาที่จะรับเข้า (โกดัง): superadmin เลือกได้ / admin ล็อกที่สาขาตัวเอง
+  if (!(App.branches && App.branches.length)) {
+    try { const b = await API.getBranches(); if (b.success) App.branches = b.data || []; } catch (_) {}
+  }
+  const isSuper  = Auth.isSuperAdmin();
+  const myBranch = Auth.getBranchId();
+  let brOpts = '<option value="">-- เลือกสาขาที่จะรับ --</option>';
+  (App.branches || []).forEach(b => {
+    if (!isSuper && String(b.id) !== String(myBranch)) return;
+    brOpts += `<option value="${b.id}">${b.name || b.id}</option>`;
+  });
+  $('#rc-branch').html(brOpts);
+  $('#rc-branch').val(isSuper ? (rec.branch_id || '') : (myBranch || rec.branch_id || ''));
+  $('#rc-branch').prop('disabled', !isSuper && !!myBranch);
+
   const items = Array.isArray(rec.items) ? rec.items : [];
   // Cost calc
   const baseTHB = (parseFloat(rec.yuan_amount || 0)) * (parseFloat(rec.exchange_rate || 1));
@@ -691,6 +710,8 @@ $('#rc-freight, #rc-customs_duty, #rc-clearance_fee, #rc-transport_fee, #rc-ware
 
 async function confirmReceived() {
   const id           = $('#rc-po-id').val();
+  const branchId     = $('#rc-branch').val();
+  if (!branchId) { showToast('กรุณาเลือกสาขาที่จะรับสินค้า', 'warning'); return; }
   const freight_cost = parseFloat($('#rc-freight').val()) || 0;
   const import_costs = {
     customs_duty:   parseFloat($('#rc-customs_duty').val()) || 0,
@@ -701,7 +722,7 @@ async function confirmReceived() {
   };
   $('#btn-confirm-receive').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');
   try {
-    const res = await API.updateImportStatus(id, 'received', import_costs, freight_cost);
+    const res = await API.updateImportStatus(id, 'received', import_costs, freight_cost, branchId);
     if (res.success) {
       showToast('รับสินค้าและอัพเดทสต็อคสำเร็จ!', 'success');
       bootstrap.Modal.getOrCreateInstance('#modalReceive').hide();
@@ -1276,6 +1297,8 @@ function bahtText(amount) {
 function printReceipt(w) {
   const items = Array.isArray(w.items) ? w.items : [];
   const money = (n) => (parseFloat(n) || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // escape สำหรับใส่ใน HTML attribute / ข้อความ — กันค่าจากผู้ใช้ทำ layout เพี้ยนหรือ inject
+  const escA = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   // ผู้ขาย (หัวกระดาษ) = สาขาที่ออกเอกสาร
   const branch = (App.branches || []).find(b => String(b.id) === String(w.branch_id)) || {};
@@ -1295,20 +1318,20 @@ function printReceipt(w) {
   const prodById = {};
   (App.products || []).forEach(p => { prodById[String(p.id)] = p; });
 
-  // ราคารวม VAT แล้ว → แตก VAT ออก (7%)
+  // ราคารวม VAT แล้ว → แตก VAT ออก (7%)  [ค่าตั้งต้น — สคริปต์ใน preview จะคำนวณซ้ำให้ลงตัว]
   const grand        = Math.round((parseFloat(w.total_value) || 0) * 100) / 100; // ยอดสุทธิ (รวม VAT)
   const preVat       = Math.round((grand / 1.07) * 100) / 100;                   // รวมเงิน (ก่อน VAT)
   const vat          = Math.round((grand - preVat) * 100) / 100;                 // VAT 7%
-  const deposit      = 0;                                                        // เงินมัดจำ (เว้นว่าง/กรอกมือ)
+  const deposit      = Math.round((parseFloat(w.deposit) || 0) * 100) / 100;     // เงินมัดจำ (แก้ไขได้)
   const afterDeposit = preVat - deposit;
 
-  // เลขที่เอกสาร + วันที่
+  // เลขที่เอกสาร + วันที่ — ใช้ค่าที่บันทึกไว้ (w.doc_no) ถ้ามี ไม่งั้นสร้างอัตโนมัติ
   const d = new Date(w.withdrawal_date || w.created_at || Date.now());
   const valid = !isNaN(d.getTime());
-  const docNo   = 'IV' + (valid ? d.getFullYear() : '') + (valid ? String(d.getMonth() + 1).padStart(2, '0') : '') + String(w.id).replace(/\D/g, '').slice(-4);
+  const docNo   = w.doc_no || ('IV' + (valid ? d.getFullYear() : '') + (valid ? String(d.getMonth() + 1).padStart(2, '0') : '') + String(w.id).replace(/\D/g, '').slice(-4));
   const dateStr = valid ? `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}` : '';
 
-  // แถวสินค้า (ราคา/จำนวนเงิน = ก่อน VAT เพื่อให้ผลรวม = "รวมเงิน")
+  // แถวสินค้า — ช่อง qty/หน่วย/ราคา(ก่อน VAT) เป็น input แก้ไขได้ (เปิด-ปิดด้วยปุ่ม "แก้ไข")
   const minRows = 10;
   let rowsHtml = items.map((it, idx) => {
     const qty     = parseFloat(it.quantity) || 0;
@@ -1316,18 +1339,18 @@ function printReceipt(w) {
     const unitEx  = unitInc / 1.07;
     const lineEx  = qty * unitEx;
     const unit    = it.unit || (prodById[String(it.product_id)] && prodById[String(it.product_id)].unit) || '';
-    return `<tr>
-      <td class="c">${idx + 1}</td>
+    return `<tr class="itemrow" data-pid="${escA(it.product_id || '')}">
+      <td class="c"><span class="idx">${idx + 1}</span><button type="button" class="rowdel no-print" onclick="delRow(this)" title="ลบแถว">✕</button></td>
       <td></td>
-      <td>${it.product_name || it.product_id || ''}</td>
-      <td class="c">${qty.toLocaleString('th-TH')}</td>
-      <td class="c">${unit}</td>
-      <td class="r">${money(unitEx)}</td>
-      <td class="r">${money(lineEx)}</td>
+      <td><span class="pname" data-edit>${escA(it.product_name || it.product_id || '')}</span></td>
+      <td class="c"><input class="qty num" type="number" min="0" step="any" value="${qty}" oninput="recompute()" disabled></td>
+      <td class="c"><input class="unit" type="text" style="text-align:center" value="${escA(unit)}" disabled></td>
+      <td class="r"><input class="price num" type="number" min="0" step="any" value="${unitEx.toFixed(2)}" oninput="recompute()" disabled></td>
+      <td class="r"><span class="lineAmt">${money(lineEx)}</span></td>
     </tr>`;
   }).join('');
   for (let i = items.length; i < minRows; i++) {
-    rowsHtml += '<tr><td class="c">&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>';
+    rowsHtml += '<tr class="filler"><td class="c">&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>';
   }
 
   const win = window.open('', '_blank', 'width=820,height=1000');
@@ -1370,9 +1393,30 @@ function printReceipt(w) {
       .signs{display:flex;justify-content:space-between;gap:30px;margin-top:34px;text-align:center;font-size:12px}
       .signs > div{flex:1}
       .sigln{border-top:1px dotted #333;margin:34px 12px 4px}
-      .toolbar{text-align:center;margin-top:16px}
+      .toolbar{text-align:center;margin-top:16px;display:flex;gap:10px;justify-content:center}
       .toolbar button{padding:8px 18px;font-size:14px;cursor:pointer;border:1px solid #888;border-radius:6px;background:#fff}
-      @media print{.no-print{display:none}body{padding:0}@page{size:A4;margin:10mm}}
+      .toolbar button.primary{background:#e07b1a;color:#fff;border-color:#e07b1a}
+      /* ช่องแก้ไข: ปกติดูเหมือนข้อความธรรมดา, เข้าโหมดแก้ไขจึงมีกรอบ */
+      input,textarea{font-family:inherit;font-size:inherit;color:#111;border:none;background:transparent;padding:0;margin:0;width:100%}
+      input:disabled,textarea:disabled{-webkit-text-fill-color:#111;opacity:1;color:#111}
+      input.num{text-align:right}
+      .depedit{display:none} body.editing .depedit{display:inline-block;width:92px} body.editing #depV{display:none}
+      [data-edit]{outline:none}
+      .rowdel{display:none;margin-left:5px;cursor:pointer;border:none;background:#fdeaea;color:#c0392b;border-radius:3px;font-size:11px;line-height:1;padding:1px 4px}
+      .additembar{display:none;margin-top:6px}
+      .additembar button{font-size:12px;padding:4px 10px;cursor:pointer;border:1px dashed #e07b1a;border-radius:5px;background:#fffdf7;color:#b3610f}
+      body.editing input:not(:disabled),body.editing textarea:not(:disabled){border:1px solid #e0b07a;border-radius:3px;background:#fffdf7;padding:1px 3px}
+      body.editing [data-edit]{outline:1px dashed #e07b1a;outline-offset:2px;min-width:40px;display:inline-block;background:#fffdf7}
+      body.editing .rowdel{display:inline-block}
+      body.editing .additembar{display:block}
+      .edithint{display:none;text-align:center;color:#b3610f;font-size:11.5px;margin-top:6px}
+      body.editing .edithint{display:block}
+      @media print{
+        .no-print{display:none}body{padding:0}@page{size:A4;margin:10mm}
+        input,textarea{border:none!important;background:transparent!important;padding:0!important}
+        .rowdel,.additembar,.edithint{display:none!important}
+        [data-edit]{outline:none!important;background:transparent!important}
+      }
     </style></head><body>
     <div class="sheet">
       <div class="top">
@@ -1391,14 +1435,14 @@ function printReceipt(w) {
 
       <div class="cust">
         <div style="flex:1.4">
-          <div><span class="lbl">นามลูกค้า</span> <span class="val">${custName}</span></div>
-          <div><span class="lbl">ที่อยู่</span> <span class="val">${custAddr}</span></div>
-          <div><span class="lbl">เลขประจำตัวผู้เสียภาษี</span> <span class="val">${custTax}</span>
+          <div><span class="lbl">นามลูกค้า</span> <span class="val" id="custNameV" data-edit>${escA(custName)}</span></div>
+          <div><span class="lbl">ที่อยู่</span> <span class="val" id="custAddrV" data-edit>${escA(custAddr)}</span></div>
+          <div><span class="lbl">เลขประจำตัวผู้เสียภาษี</span> <span class="val" id="custTaxV" data-edit>${escA(custTax)}</span>
             &nbsp;&nbsp;<span class="chk">X</span>สำนักงานใหญ่ &nbsp;<span class="chk">&nbsp;</span>สาขาที่</div>
         </div>
         <div style="text-align:right;white-space:nowrap">
-          <div>เลขที่ <span class="docno">${docNo}</span></div>
-          <div>วันที่ <span class="docno">${dateStr}</span></div>
+          <div>เลขที่ <span class="docno" id="docNoV" data-edit>${escA(docNo)}</span></div>
+          <div>วันที่ <span class="docno" id="dateV" data-edit>${dateStr}</span></div>
         </div>
       </div>
 
@@ -1408,12 +1452,13 @@ function printReceipt(w) {
           <th style="width:9%">จำนวน</th><th style="width:9%">หน่วย</th>
           <th style="width:13%">ราคา/หน่วย</th><th style="width:14%">จำนวนเงิน</th>
         </tr></thead>
-        <tbody>${rowsHtml}</tbody>
+        <tbody id="itemBody">${rowsHtml}</tbody>
       </table>
+      <div class="additembar no-print"><button type="button" onclick="addRow()">＋ เพิ่มแถวสินค้า</button></div>
 
       <div class="bottom">
         <div class="left">
-          <div class="words">ตัวอักษร&nbsp;&nbsp;( ${bahtText(grand)} )</div>
+          <div class="words">ตัวอักษร&nbsp;&nbsp;<span id="wordsV">( ${bahtText(grand)} )</span></div>
           <div class="note">
             หมายเหตุ :<br>
             1. กรณีชำระเงินโดยเช็คกรุณาสั่งจ่ายขีดคร่อมในนาม "${sellerTh}" เท่านั้น<br>
@@ -1422,11 +1467,12 @@ function printReceipt(w) {
           </div>
         </div>
         <div class="right">
-          <div class="totrow"><div class="k">รวมเงิน<small>TOTAL AMOUNT</small></div><div class="v">${money(preVat)}</div></div>
-          <div class="totrow"><div class="k">หัก เงินมัดจำ<small>DEPOSIT</small></div><div class="v">${deposit ? money(deposit) : '-'}</div></div>
-          <div class="totrow"><div class="k">มูลค่าสินค้าหลังหักเงินมัดจำ<small>TOTAL AMOUNT AFTER DEPOSIT</small></div><div class="v">${money(afterDeposit)}</div></div>
-          <div class="totrow"><div class="k vatcell">ภาษีมูลค่าเพิ่ม <span class="vatbox">7%</span><small>VAT</small></div><div class="v">${money(vat)}</div></div>
-          <div class="totrow grand"><div class="k">ยอดเงินสุทธิ<small>GRAND TOTAL</small></div><div class="v">${money(grand)}</div></div>
+          <div class="totrow"><div class="k">รวมเงิน<small>TOTAL AMOUNT</small></div><div class="v" id="preVatV">${money(preVat)}</div></div>
+          <div class="totrow"><div class="k">หัก เงินมัดจำ<small>DEPOSIT</small></div>
+            <div class="v"><span id="depV">${deposit ? money(deposit) : '-'}</span><input id="depIn" class="num depedit" type="number" min="0" step="any" value="${deposit}" oninput="recompute()"></div></div>
+          <div class="totrow"><div class="k">มูลค่าสินค้าหลังหักเงินมัดจำ<small>TOTAL AMOUNT AFTER DEPOSIT</small></div><div class="v" id="afterV">${money(afterDeposit)}</div></div>
+          <div class="totrow"><div class="k vatcell">ภาษีมูลค่าเพิ่ม <span class="vatbox">7%</span><small>VAT</small></div><div class="v" id="vatV">${money(vat)}</div></div>
+          <div class="totrow grand"><div class="k">ยอดเงินสุทธิ<small>GRAND TOTAL</small></div><div class="v" id="grandV">${money(grand)}</div></div>
         </div>
       </div>
 
@@ -1436,10 +1482,319 @@ function printReceipt(w) {
         <div><div class="sigln"></div>ผู้มีอำนาจลงนาม<br><span style="font-size:10px;color:#666">${sellerTh}</span></div>
       </div>
 
-      <div class="toolbar no-print"><button onclick="window.print()">🖨️ พิมพ์</button></div>
+      <div class="edithint no-print">โหมดแก้ไข — แก้ช่องที่มีกรอบสีส้มได้ &middot; การแก้รายการสินค้าจะอัพเดทยอดบิล แต่ <b>ไม่</b> ปรับสต็อก</div>
+      <div class="toolbar no-print">
+        <button id="btnEdit" onclick="toggleEdit()">✏️ แก้ไข</button>
+        <button id="btnSave" class="primary" style="display:none" onclick="saveBill()">💾 บันทึก</button>
+        <button onclick="window.print()">🖨️ พิมพ์</button>
+      </div>
     </div>
+    <script>
+      var CTX = ${JSON.stringify({ id: w.id, recipient_id: w.recipient_id || '' })};
+      var editing = false;
+      function money(n){ n = parseFloat(n); if (isNaN(n)) n = 0; return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+      function words(n){ try { return (window.opener && window.opener.bahtText) ? window.opener.bahtText(n) : ''; } catch (e) { return ''; } }
+      function setV(id, t){ var el = document.getElementById(id); if (el) el.textContent = t; }
+      function getText(id){ var el = document.getElementById(id); return el ? el.innerText.trim() : ''; }
+      function recompute(){
+        var pre = 0, rows = document.querySelectorAll('tr.itemrow');
+        for (var i = 0; i < rows.length; i++) {
+          var q = parseFloat(rows[i].querySelector('.qty').value) || 0;
+          var p = parseFloat(rows[i].querySelector('.price').value) || 0; // ราคา/หน่วย ก่อน VAT
+          var line = Math.round(q * p * 100) / 100;
+          rows[i].querySelector('.lineAmt').textContent = money(line);
+          pre += line;
+        }
+        pre = Math.round(pre * 100) / 100;                          // รวมเงิน = ผลรวมแถว (ลงตัวเสมอ)
+        var dep = parseFloat(document.getElementById('depIn').value) || 0;
+        var grand = Math.round(pre * 1.07 * 100) / 100;             // รวม VAT
+        var vat = Math.round((grand - pre) * 100) / 100;
+        var after = Math.round((pre - dep) * 100) / 100;
+        setV('preVatV', money(pre)); setV('depV', dep ? money(dep) : '-');
+        setV('afterV', money(after)); setV('vatV', money(vat)); setV('grandV', money(grand));
+        setV('wordsV', '( ' + words(grand) + ' )');
+      }
+      function renumber(){ var r = document.querySelectorAll('tr.itemrow .idx'); for (var i = 0; i < r.length; i++) r[i].textContent = i + 1; }
+      function delRow(btn){ var tr = btn.closest('tr'); if (tr) tr.remove(); renumber(); recompute(); }
+      function addRow(){
+        var tb = document.getElementById('itemBody');
+        var tr = document.createElement('tr');
+        tr.className = 'itemrow'; tr.setAttribute('data-pid', '');
+        tr.innerHTML = '<td class="c"><span class="idx"></span><button type="button" class="rowdel no-print" onclick="delRow(this)" title="ลบแถว">✕</button></td>'
+          + '<td></td>'
+          + '<td><span class="pname" data-edit></span></td>'
+          + '<td class="c"><input class="qty num" type="number" min="0" step="any" value="0" oninput="recompute()"></td>'
+          + '<td class="c"><input class="unit" type="text" style="text-align:center" value=""></td>'
+          + '<td class="r"><input class="price num" type="number" min="0" step="any" value="0.00" oninput="recompute()"></td>'
+          + '<td class="r"><span class="lineAmt">0.00</span></td>';
+        var filler = tb.querySelector('tr.filler');
+        if (filler) tb.insertBefore(tr, filler); else tb.appendChild(tr);
+        // ให้แถวใหม่อยู่ในสถานะแก้ไขเดียวกับทั้งบิล
+        tr.querySelector('.pname').contentEditable = editing ? 'true' : 'false';
+        var nins = tr.querySelectorAll('input'); for (var k = 0; k < nins.length; k++) nins[k].disabled = !editing;
+        renumber(); recompute();
+      }
+      function toggleEdit(force){
+        editing = (force === undefined) ? !editing : !!force;
+        document.body.classList.toggle('editing', editing);
+        var ins = document.querySelectorAll('input'); for (var i = 0; i < ins.length; i++) ins[i].disabled = !editing;
+        var ed = document.querySelectorAll('[data-edit]'); for (var j = 0; j < ed.length; j++) ed[j].contentEditable = editing ? 'true' : 'false';
+        document.getElementById('btnEdit').textContent = editing ? '✓ เสร็จ' : '✏️ แก้ไข';
+        document.getElementById('btnSave').style.display = editing ? '' : 'none';
+      }
+      function parseDate(s){ var p = String(s || '').split('/'); if (p.length !== 3) return ''; var dd = ('0' + p[0]).slice(-2), mm = ('0' + p[1]).slice(-2), yy = p[2]; if (!yy) return ''; return yy + '-' + mm + '-' + dd; }
+      function gather(){
+        var items = [], rows = document.querySelectorAll('tr.itemrow');
+        for (var i = 0; i < rows.length; i++) {
+          var name = rows[i].querySelector('.pname').innerText.trim();
+          var q = parseFloat(rows[i].querySelector('.qty').value) || 0;
+          var unit = rows[i].querySelector('.unit').value.trim();
+          var ex = parseFloat(rows[i].querySelector('.price').value) || 0;
+          if (!name && q <= 0) continue;
+          items.push({ product_id: rows[i].getAttribute('data-pid') || '', product_name: name, unit: unit,
+                       quantity: q, unit_price: Math.round(ex * 1.07 * 100) / 100 }); // เก็บราคา/หน่วย แบบรวม VAT
+        }
+        return { id: CTX.id, recipient_id: CTX.recipient_id,
+                 recipient_name: getText('custNameV'), cust_address: getText('custAddrV'), cust_tax: getText('custTaxV'),
+                 doc_no: getText('docNoV'), withdrawal_date: parseDate(getText('dateV')),
+                 deposit: parseFloat(document.getElementById('depIn').value) || 0, items: items };
+      }
+      async function saveBill(){
+        if (!window.opener || !window.opener.saveEditedInvoice) { alert('ไม่พบหน้าต่างหลัก — กรุณาเปิดใบกำกับภาษีใหม่อีกครั้ง'); return; }
+        var btn = document.getElementById('btnSave'); btn.disabled = true; var old = btn.textContent; btn.textContent = '⏳ กำลังบันทึก...';
+        try {
+          var res = await window.opener.saveEditedInvoice(gather());
+          if (res && res.success) { alert('บันทึกบิลสำเร็จ'); toggleEdit(false); }
+          else { alert('บันทึกไม่สำเร็จ: ' + ((res && res.message) || 'unknown')); }
+        } catch (e) { alert('เกิดข้อผิดพลาด: ' + e.message); }
+        btn.disabled = false; btn.textContent = old;
+      }
+      recompute();
+    <\/script>
     </body></html>`);
   win.document.close();
+}
+
+// บันทึกบิลที่แก้จากหน้าต่าง preview — ถูกเรียกผ่าน window.opener.saveEditedInvoice(payload)
+// ต้องเป็น function declaration (global) เพื่อให้ popup เข้าถึงได้ผ่าน window.opener
+// payload: { id, recipient_id, recipient_name, cust_address, cust_tax, doc_no, withdrawal_date, deposit, items[] }
+async function saveEditedInvoice(payload) {
+  try {
+    // 1) อัพเดทใบเบิก — recipient_name / วันที่ / เลขที่เอกสาร / เงินมัดจำ / รายการ (total_value คำนวณฝั่ง server)
+    const wRes = await API.updateWithdrawal({
+      id:              payload.id,
+      recipient_name:  payload.recipient_name,
+      withdrawal_date: payload.withdrawal_date,
+      doc_no:          payload.doc_no,
+      deposit:         payload.deposit,
+      items:           payload.items
+    });
+    if (!wRes || !wRes.success) return { success: false, message: (wRes && wRes.message) || 'อัพเดทใบเบิกไม่สำเร็จ' };
+
+    // 2) ที่อยู่ / เลขภาษี / ชื่อ ลูกค้า → เก็บที่ระเบียนผู้รับ (เฉพาะเมื่อมี recipient_id)
+    //    ไม่ critical — ถ้าสิทธิ์ไม่พอ (staff) บิลก็บันทึกแล้ว จึงห่อด้วย try/catch
+    if (payload.recipient_id) {
+      try {
+        await API.updateRecipient({
+          id:      payload.recipient_id,
+          name:    payload.recipient_name,
+          address: payload.cust_address,
+          tax_id:  payload.cust_tax
+        });
+      } catch (_) {}
+    }
+
+    // 3) refresh ข้อมูลในหน้าให้ตรงกับที่บันทึก
+    try {
+      const [wl, rl] = await Promise.all([API.getWithdrawals(), API.getRecipients()]);
+      if (wl && wl.success) {
+        App.withdrawals = wl.data || [];
+        if (typeof renderWithdrawalTable === 'function') renderWithdrawalTable(App.withdrawals);
+      }
+      if (rl && rl.success) App.recipients = rl.data || [];
+    } catch (_) {}
+
+    if (typeof showToast === 'function') showToast('บันทึกบิลสำเร็จ', 'success');
+    return { success: true };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+// ============================================================
+// SECTION: TRANSFER (โยกของข้ามโกดัง/สาขา)
+// ============================================================
+let _tfSrcUnitCost = 0; // ต้นทุน/หน่วยต้นทางของสินค้าที่เลือก (สำหรับ preview)
+
+async function loadTransfer() {
+  try {
+    const [tf, br, st] = await Promise.all([
+      API.getTransfers(),
+      (App.branches && App.branches.length) ? Promise.resolve(null) : API.getBranches(),
+      (App.stock    && App.stock.length)    ? Promise.resolve(null) : API.getStock()
+    ]);
+    if (tf && tf.success) App.transfers = tf.data || [];
+    if (br && br.success) App.branches  = br.data || [];
+    if (st && st.success) App.stock     = st.data || [];
+    renderTransferTable(App.transfers);
+  } catch (e) {
+    showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger');
+  }
+}
+
+function tfBranchName(id) {
+  const b = (App.branches || []).find(x => String(x.id) === String(id));
+  return b ? (b.name || id) : (id || '-');
+}
+
+function renderTransferTable(data) {
+  const rows = data || [];
+  if (!rows.length) {
+    $('#tf-table-body').html('<tr><td colspan="8" class="text-center text-muted py-5">ยังไม่มีรายการโยกของ</td></tr>');
+    return;
+  }
+  $('#tf-table-body').html(rows.map(r => `<tr>
+    <td>${r.id}</td>
+    <td>${Fmt.date(r.transfer_date || r.created_at)}</td>
+    <td>${r.product_name || r.product_id || '-'}${r.product_code ? ` <span class="text-muted small">(${r.product_code})</span>` : ''}</td>
+    <td class="text-center">${Fmt.number(r.quantity)}</td>
+    <td><span class="text-muted">${tfBranchName(r.from_branch_id)}</span> <i class="fas fa-arrow-right mx-1 text-primary"></i> <strong>${tfBranchName(r.to_branch_id)}</strong></td>
+    <td class="text-end">${Fmt.currency(r.dest_unit_cost)}</td>
+    <td class="text-end">${Fmt.currency((parseFloat(r.transport_cost) || 0) + (parseFloat(r.labor_cost) || 0))}</td>
+    <td>${r.created_by || '-'}</td>
+  </tr>`).join(''));
+}
+
+function rebuildTransferToSelect() {
+  const from = $('#tf-from').val();
+  let opts = '<option value="">-- เลือกสาขาปลายทาง --</option>';
+  (App.branches || []).forEach(b => {
+    if (String(b.id) === String(from)) return; // ปลายทางต้องไม่ใช่ต้นทาง
+    opts += `<option value="${b.id}">${b.name || b.id}</option>`;
+  });
+  const prev = $('#tf-to').val();
+  $('#tf-to').html(opts);
+  if (prev && String(prev) !== String(from)) $('#tf-to').val(prev);
+}
+
+function rebuildTransferProductSelect() {
+  const from = $('#tf-from').val();
+  let opts;
+  if (!from) {
+    opts = '<option value="">-- เลือกสาขาต้นทางก่อน --</option>';
+  } else {
+    const list = (App.stock || []).filter(s => String(s.branch_id || '') === String(from) && (parseFloat(s.quantity) || 0) > 0);
+    if (!list.length) {
+      opts = '<option value="">-- สาขานี้ไม่มีสินค้าคงเหลือ --</option>';
+    } else {
+      opts = '<option value="">-- เลือกสินค้า --</option>';
+      list.forEach(s => {
+        const nm = String(s.product_name || s.product_id || '').replace(/"/g, '&quot;');
+        opts += `<option value="${s.product_id}" data-qty="${parseFloat(s.quantity) || 0}" data-unit="${s.unit || ''}" data-name="${nm}" data-cost="${parseFloat(s.cost_price) || 0}">${s.product_name || s.product_id} (คงเหลือ ${Fmt.number(s.quantity)} ${s.unit || ''})</option>`;
+      });
+    }
+  }
+  $('#tf-product').html(opts);
+  $('#tf-avail').html('&nbsp;');
+}
+
+function openTransferModal() {
+  if (!(App.branches && App.branches.length)) {
+    showToast('กำลังโหลดข้อมูลสาขา กรุณาลองอีกครั้งใน 1-2 วินาที', 'info');
+    loadTransfer();
+    return;
+  }
+  $('#tf-form')[0].reset();
+  $('#tf-date').val(new Date().toISOString().split('T')[0]);
+  $('#tf-dest-cost').text('฿0.00');
+  _tfSrcUnitCost = 0;
+
+  const isSuper  = Auth.isSuperAdmin();
+  const myBranch = Auth.getBranchId();
+
+  // สาขาต้นทาง: superadmin เลือกได้ทุกสาขา / admin ล็อกที่สาขาตัวเอง
+  let fromOpts = '<option value="">-- เลือกสาขาต้นทาง --</option>';
+  (App.branches || []).forEach(b => {
+    if (!isSuper && String(b.id) !== String(myBranch)) return;
+    fromOpts += `<option value="${b.id}">${b.name || b.id}</option>`;
+  });
+  $('#tf-from').html(fromOpts);
+  if (!isSuper && myBranch) $('#tf-from').val(myBranch).prop('disabled', true);
+  else $('#tf-from').prop('disabled', false);
+
+  rebuildTransferToSelect();
+  rebuildTransferProductSelect();
+  calcTransferPreview();
+
+  new bootstrap.Modal('#modalTransfer').show();
+}
+
+function onTransferFromChange() {
+  rebuildTransferToSelect();
+  rebuildTransferProductSelect();
+  _tfSrcUnitCost = 0;
+  calcTransferPreview();
+}
+
+function onTransferProductChange() {
+  const opt = $('#tf-product option:selected');
+  if ($('#tf-product').val()) {
+    $('#tf-avail').text(`คงเหลือต้นทาง: ${Fmt.number(opt.data('qty') || 0)} ${opt.data('unit') || ''}`);
+    _tfSrcUnitCost = parseFloat(opt.data('cost')) || 0;
+  } else {
+    $('#tf-avail').html('&nbsp;');
+    _tfSrcUnitCost = 0;
+  }
+  calcTransferPreview();
+}
+
+function calcTransferPreview() {
+  const qty       = parseFloat($('#tf-qty').val()) || 0;
+  const transport = parseFloat($('#tf-transport').val()) || 0;
+  const labor     = parseFloat($('#tf-labor').val()) || 0;
+  const destUnit  = qty > 0 ? (_tfSrcUnitCost * qty + transport + labor) / qty : 0;
+  $('#tf-dest-cost').text(Fmt.currency(destUnit));
+}
+
+async function saveTransfer() {
+  const productId  = $('#tf-product').val();
+  const fromBranch = $('#tf-from').val();
+  const toBranch   = $('#tf-to').val();
+  const qty        = parseFloat($('#tf-qty').val()) || 0;
+  const opt        = $('#tf-product option:selected');
+  const avail      = parseFloat(opt.data('qty')) || 0;
+
+  if (!fromBranch)                           { showToast('กรุณาเลือกสาขาต้นทาง', 'warning'); return; }
+  if (!toBranch)                             { showToast('กรุณาเลือกสาขาปลายทาง', 'warning'); return; }
+  if (String(fromBranch) === String(toBranch)) { showToast('สาขาต้นทางและปลายทางต้องไม่เหมือนกัน', 'warning'); return; }
+  if (!productId)                            { showToast('กรุณาเลือกสินค้าที่จะย้าย', 'warning'); return; }
+  if (qty <= 0)                              { showToast('กรุณาระบุจำนวนที่ย้าย', 'warning'); return; }
+  if (qty > avail)                           { showToast(`จำนวนเกินสต็อกคงเหลือ (มี ${Fmt.number(avail)})`, 'warning'); return; }
+
+  const payload = {
+    product_id:     productId,
+    product_name:   opt.data('name') || '',
+    quantity:       qty,
+    from_branch_id: fromBranch,
+    to_branch_id:   toBranch,
+    transport_cost: parseFloat($('#tf-transport').val()) || 0,
+    labor_cost:     parseFloat($('#tf-labor').val()) || 0,
+    transfer_date:  $('#tf-date').val(),
+    notes:          $('#tf-notes').val(),
+    created_by:     App.user ? App.user.name : ''
+  };
+
+  $('#btn-save-tf').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>กำลังโยก...');
+  try {
+    const res = await API.addTransfer(payload);
+    if (res.success) {
+      showToast('โยกของสำเร็จ!', 'success');
+      bootstrap.Modal.getOrCreateInstance('#modalTransfer').hide();
+      const sr = await API.getStock(); if (sr.success) App.stock = sr.data || []; // สต็อกเปลี่ยน → ดึงใหม่
+      loadTransfer();
+    } else throw new Error(res.message);
+  } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
+  $('#btn-save-tf').prop('disabled', false).html('<i class="fas fa-dolly me-1"></i>ยืนยันโยกของ');
 }
 
 // ============================================================
