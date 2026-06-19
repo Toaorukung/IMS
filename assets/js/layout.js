@@ -17,11 +17,13 @@ function initLayout(activePage) {
   ] : [];
 
   const menuWithdrawal = isAdmin ? [
-    { key: 'withdrawal', icon: 'fa-file-export', label: _t('nav_withdrawal'), url: '/dashboard/withdrawal/' },
-    { key: 'transfer',   icon: 'fa-dolly',       label: _t('nav_transfer'),   url: '/dashboard/transfer/' },
-    { key: 'recipients', icon: 'fa-users',       label: _t('nav_recipients'), url: '/dashboard/recipients/' }
+    { key: 'withdrawal',       icon: 'fa-file-export',    label: _t('nav_withdrawal'),       url: '/dashboard/withdrawal/' },
+    { key: 'withdrawal-items', icon: 'fa-clipboard-list', label: _t('nav_withdrawal_items'), url: '/dashboard/withdrawal/items/' },
+    { key: 'transfer',         icon: 'fa-dolly',          label: _t('nav_transfer'),         url: '/dashboard/transfer/' },
+    { key: 'recipients',       icon: 'fa-users',          label: _t('nav_recipients'),       url: '/dashboard/recipients/' }
   ] : [
-    { key: 'withdrawal', icon: 'fa-file-export', label: _t('nav_withdrawal'), url: '/dashboard/withdrawal/' }
+    { key: 'withdrawal',       icon: 'fa-file-export',    label: _t('nav_withdrawal'),       url: '/dashboard/withdrawal/' },
+    { key: 'withdrawal-items', icon: 'fa-clipboard-list', label: _t('nav_withdrawal_items'), url: '/dashboard/withdrawal/items/' }
   ];
 
   const menuSettings = isAdmin ? [
@@ -52,7 +54,7 @@ function initLayout(activePage) {
       <div class="sidebar-brand-icon"><i class="fas fa-boxes"></i></div>
       <div>
         <div class="sidebar-brand-text">${_t('sidebar_brand')}</div>
-        <div class="sidebar-brand-ver">v1.1.0</div>
+        <div class="sidebar-brand-ver">v1.2.1</div>
       </div>
     </div>
     ${isAdmin ? `<div class="sidebar-section-label">${_t('menu_main')}</div>

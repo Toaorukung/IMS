@@ -19,7 +19,7 @@ const App = {
 /* ===== INIT ===== */
 $(document).ready(async function () {
   const page = document.body.dataset.page || 'home';
-  const STAFF_ALLOWED_PAGES = ['withdrawal'];
+  const STAFF_ALLOWED_PAGES = ['withdrawal', 'withdrawal-items'];
   const SUPERADMIN_ONLY_PAGES = ['users'];
 
   // 1. ถ้าไม่มี token เลย → ไป login ทันที (ไม่รอ server)
@@ -100,6 +100,7 @@ $(document).ready(async function () {
     case 'stock':         loadStock();              break;
     case 'stock-imports': loadStockImportHistory(); break;
     case 'withdrawal': loadWithdrawal(); if (urlParams.get('new') === '1') setTimeout(openWithdrawalModal, 600); break;
+    case 'withdrawal-items': loadWithdrawalItems(); break;
     case 'transfer':   loadTransfer();   if (urlParams.get('new') === '1') setTimeout(openTransferModal, 600); break;
     case 'recipients': loadRecipients(); break;
     case 'report':     initReports();    break;
@@ -923,9 +924,11 @@ function applyStockView() {
   const rows = stockViewRows();
   const total = rows.length;
   const low   = rows.filter(s => parseFloat(s.quantity || 0) <= parseFloat(s.min_stock || 0) && parseFloat(s.min_stock || 0) > 0).length;
+  const qty   = rows.reduce((sum, s) => sum + parseFloat(s.quantity || 0), 0);
   const value = rows.reduce((sum, s) => sum + parseFloat(s.quantity || 0) * parseFloat(s.cost_price || 0), 0);
   $('#stock-stat-total').text(total);
   $('#stock-stat-low').text(low);
+  $('#stock-stat-qty').text(Fmt.number(qty));
   $('#stock-stat-value').text(Fmt.currency(value));
 
   const q = ($('#stock-search').val() || '').toLowerCase();
@@ -1146,6 +1149,154 @@ $(document).on('click', '.wd-filter', function () {
   wdFilter = $(this).data('filter');
   renderWithdrawalTable(App.withdrawals);
 });
+
+// ============================================================
+// SECTION: WITHDRAWAL ITEMS (สรุปการเบิกรายสินค้า — รายวัน/เดือน/ปี)
+// ============================================================
+const wdiState = { mode: 'day', branch: '__all__' };
+
+async function loadWithdrawalItems() {
+  // ตั้งค่าเริ่มต้นของตัวเลือกวัน/เดือน/ปี (ครั้งแรกที่โหลด)
+  const today = new Date();
+  const iso   = today.toISOString().slice(0, 10);
+  if (!$('#wdi-date').val())  $('#wdi-date').val(iso);
+  if (!$('#wdi-month').val()) $('#wdi-month').val(iso.slice(0, 7));
+  if (!$('#wdi-year').val())  $('#wdi-year').val(today.getFullYear());
+
+  $('#wdi-table-body').html('<tr><td colspan="7" class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>');
+  try {
+    const [w, p] = await Promise.all([
+      API.getWithdrawals(),
+      (App.products && App.products.length) ? Promise.resolve(null) : API.getProducts()
+    ]);
+    if (!w.success) throw new Error(w.message);
+    App.withdrawals = w.data || [];
+    if (p && p.success) App.products = p.data || [];
+    await ensureBranchesLoaded();
+  } catch (e) {
+    showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger');
+    $('#wdi-table-body').html('<tr><td colspan="7" class="text-center text-danger py-4">โหลดข้อมูลไม่สำเร็จ</td></tr>');
+    return;
+  }
+  populateWdiBranchFilter();
+  renderWithdrawalItems();
+}
+
+// dropdown สาขา (เฉพาะ superadmin — admin/staff เห็นเฉพาะสาขาตัวเองอยู่แล้ว)
+function populateWdiBranchFilter() {
+  if (!Auth.isSuperAdmin()) return;
+  let opts = '<option value="__all__">ทุกสาขา</option>';
+  (App.branches || []).forEach(function (b) {
+    opts += `<option value="${b.id}">${b.name || b.id}</option>`;
+  });
+  $('#wdi-branch').html(opts).val(wdiState.branch);
+  $('#wdi-branch-wrap').show();
+}
+
+// สลับมุมมอง รายวัน/รายเดือน/รายปี
+function wdiSetMode(mode) {
+  wdiState.mode = mode;
+  $('#wdi-mode-group button').removeClass('active');
+  $(`#wdi-mode-group button[data-mode="${mode}"]`).addClass('active');
+  $('#wdi-pick-day').toggle(mode === 'day');
+  $('#wdi-pick-month').toggle(mode === 'month');
+  $('#wdi-pick-year').toggle(mode === 'year');
+  renderWithdrawalItems();
+}
+
+// แยกวันที่ (รองรับ 'YYYY-MM-DD' และ ISO จาก created_at)
+function wdiParseYMD(s) {
+  if (!s) return null;
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return { y: +m[1], mo: +m[2], d: +m[3] };
+  const dt = new Date(s);
+  if (isNaN(dt.getTime())) return null;
+  return { y: dt.getFullYear(), mo: dt.getMonth() + 1, d: dt.getDate() };
+}
+
+// วันที่อยู่ในช่วงที่เลือกหรือไม่
+function wdiInPeriod(dateStr) {
+  const p = wdiParseYMD(dateStr);
+  if (!p) return false;
+  if (wdiState.mode === 'day') {
+    const sel = wdiParseYMD($('#wdi-date').val());
+    return !!sel && p.y === sel.y && p.mo === sel.mo && p.d === sel.d;
+  }
+  if (wdiState.mode === 'month') {
+    const m = String($('#wdi-month').val()).match(/^(\d{4})-(\d{2})/);
+    return !!m && p.y === +m[1] && p.mo === +m[2];
+  }
+  return p.y === (parseInt($('#wdi-year').val(), 10) || 0); // year
+}
+
+// ป้ายบอกช่วงที่กำลังดู
+function wdiPeriodLabel() {
+  if (wdiState.mode === 'day')   return $('#wdi-date').val()  ? `(${Fmt.date($('#wdi-date').val())})` : '';
+  if (wdiState.mode === 'month') return $('#wdi-month').val() ? `(เดือน ${$('#wdi-month').val()})` : '';
+  return $('#wdi-year').val() ? `(ปี ${$('#wdi-year').val()})` : '';
+}
+
+function renderWithdrawalItems() {
+  // รวมเฉพาะใบเบิกที่ของออกจริง: type=normal + completed/partial_returned
+  // (items ของ partial_returned ถูกหักจำนวนที่คืนแล้วใน partialReturn → เป็นยอดออกสุทธิ)
+  const branch = Auth.isSuperAdmin() ? ($('#wdi-branch').val() || '__all__') : '__all__';
+  wdiState.branch = branch;
+
+  const map = {};
+  (App.withdrawals || []).forEach(function (w) {
+    if (w.type === 'return') return;
+    if (w.status !== 'completed' && w.status !== 'partial_returned') return;
+    if (branch !== '__all__' && String(w.branch_id || '') !== String(branch)) return;
+    if (!wdiInPeriod(w.withdrawal_date || w.created_at)) return;
+
+    const items = Array.isArray(w.items) ? w.items : [];
+    items.forEach(function (it) {
+      const prod = (App.products || []).find(function (p) { return String(p.id) === String(it.product_id); });
+      const code = prod ? (prod.code || '') : '';
+      const unit = prod ? (prod.unit || '') : '';
+      const name = it.product_name || (prod ? prod.name : '') || it.product_id || '-';
+      const key  = code ? ('c:' + code.toLowerCase()) : ('n:' + String(name).toLowerCase());
+      const qty  = parseFloat(it.quantity || 0);
+      if (qty <= 0) return;
+      if (!map[key]) map[key] = { code: code, name: name, unit: unit, qty: 0, value: 0, count: 0 };
+      map[key].qty   += qty;
+      map[key].value += qty * (parseFloat(it.unit_price || 0));
+      map[key].count += 1;
+      if (!map[key].unit && unit) map[key].unit = unit;
+    });
+  });
+
+  let list = Object.keys(map).map(function (k) { return map[k]; });
+  const q = ($('#wdi-search').val() || '').toLowerCase();
+  if (q) list = list.filter(function (r) {
+    return (r.name || '').toLowerCase().includes(q) || (r.code || '').toLowerCase().includes(q);
+  });
+  list.sort(function (a, b) { return b.qty - a.qty; });
+
+  // stats
+  $('#wdi-stat-items').text(list.length);
+  $('#wdi-stat-qty').text(Fmt.number(list.reduce(function (s, r) { return s + r.qty; }, 0)));
+  $('#wdi-stat-value').text(Fmt.currency(list.reduce(function (s, r) { return s + r.value; }, 0)));
+  $('#wdi-period-label').text(wdiPeriodLabel());
+
+  if (!list.length) {
+    $('#wdi-table-body').html('<tr><td colspan="7" class="text-center text-muted py-4">ไม่มีการเบิกออกในช่วงที่เลือก</td></tr>');
+    return;
+  }
+  $('#wdi-table-body').html(list.map(function (r, i) {
+    return `<tr>
+      <td class="text-center text-muted">${i + 1}</td>
+      <td><span class="fw-semibold">${r.code || '-'}</span></td>
+      <td>${r.name}</td>
+      <td class="text-center">${r.unit || '-'}</td>
+      <td class="text-end fw-bold text-primary">${Fmt.number(r.qty)}</td>
+      <td class="text-center">${r.count}</td>
+      <td class="text-end">${Fmt.currency(r.value)}</td>
+    </tr>`;
+  }).join(''));
+}
+
+$(document).on('input', '#wdi-search', function () { renderWithdrawalItems(); });
 
 async function openWithdrawalModal() {
   App.editingId = null;
