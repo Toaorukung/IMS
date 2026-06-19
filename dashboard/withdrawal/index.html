@@ -65,6 +65,15 @@
       </div>
       <div class="modal-body">
         <form id="wd-form">
+          <div class="row g-3 mb-3" id="wd-branch-row">
+            <div class="col-md-5">
+              <label class="form-label">สาขา (โกดังที่เบิก) <span class="text-danger">*</span></label>
+              <select class="form-select" id="wd-branch" onchange="onWdBranchChange()">
+                <option value="">-- เลือกสาขา --</option>
+              </select>
+              <div class="form-text">เลือกสาขาก่อน เพื่อแสดงสินค้าและตัดสต็อกจากคลังของสาขานั้น</div>
+            </div>
+          </div>
           <div class="row g-3 mb-4">
             <div class="col-md-4">
               <label class="form-label">ผู้รับสินค้า <span class="text-danger">*</span></label>

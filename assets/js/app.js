@@ -857,20 +857,82 @@ async function loadReceive() {
 // ============================================================
 // SECTION: STOCK (สต็อคสินค้า)
 // ============================================================
+// มุมมองหน้า stock: '__all__' = ภาพรวมทุกสาขา (รวมยอดตาม รหัส+ชื่อ) / อื่น ๆ = branch_id เฉพาะสาขา
+let stockView = '__all__';
+
 async function loadStock() {
   try {
     const [res] = await Promise.all([API.getStock(), ensureBranchesLoaded()]);
     if (!res.success) throw new Error(res.message);
     App.stock = res.data || [];
-    renderStockTable(App.stock);
-    // Stats
-    const total = App.stock.length;
-    const low   = App.stock.filter(s => parseFloat(s.quantity || 0) <= parseFloat(s.min_stock || 0) && parseFloat(s.min_stock || 0) > 0).length;
-    const value = App.stock.reduce((sum, s) => sum + parseFloat(s.quantity || 0) * parseFloat(s.cost_price || 0), 0);
-    $('#stock-stat-total').text(total);
-    $('#stock-stat-low').text(low);
-    $('#stock-stat-value').text(Fmt.currency(value));
+    populateStockBranchFilter();
+    applyStockView();
   } catch (e) { showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger'); }
+}
+
+// เติม dropdown เลือกสาขา (เฉพาะ superadmin — admin/staff เห็นสาขาตัวเองอยู่แล้ว)
+function populateStockBranchFilter() {
+  if (!Auth.isSuperAdmin()) return;
+  let opts = '<option value="__all__">ภาพรวมทุกสาขา (รวมยอด)</option>';
+  (App.branches || []).forEach(function (b) {
+    opts += `<option value="${b.id}">${b.name || b.id}</option>`;
+  });
+  $('#stock-branch-filter').html(opts).val(stockView).show();
+}
+
+// รวมยอดสต็อกตาม รหัส+ชื่อสินค้า ข้ามสาขา (สำหรับมุมมองภาพรวม)
+function aggregateStockByProduct(rows) {
+  const map = {};
+  (rows || []).forEach(function (s) {
+    const key  = `${(s.product_code || '').trim().toLowerCase()}|${(s.product_name || '').trim().toLowerCase()}`;
+    const qty  = parseFloat(s.quantity  || 0);
+    const cost = parseFloat(s.cost_price || 0);
+    const minQ = parseFloat(s.min_stock || 0);
+    if (!map[key]) {
+      map[key] = {
+        _aggregated: true, product_code: s.product_code || '',
+        product_name: s.product_name || s.product_id || '', unit: s.unit || '',
+        quantity: 0, _value: 0, min_stock: 0, _branches: {}
+      };
+    }
+    const g = map[key];
+    g.quantity  += qty;
+    g._value    += qty * cost;
+    g.min_stock += minQ;
+    if (s.branch_id) g._branches[s.branch_id] = true;
+    if (!g.unit && s.unit) g.unit = s.unit;
+  });
+  return Object.keys(map).map(function (k) {
+    const g = map[k];
+    g.cost_price   = g.quantity > 0 ? g._value / g.quantity : 0;
+    g.branch_count = Object.keys(g._branches).length;
+    return g;
+  }).sort(function (a, b) { return (a.product_code || '').localeCompare(b.product_code || ''); });
+}
+
+// dataset ตามมุมมองที่เลือก (ยังไม่กรองคำค้น)
+function stockViewRows() {
+  if (stockView === '__all__') {
+    return Auth.isSuperAdmin() ? aggregateStockByProduct(App.stock) : App.stock;
+  }
+  return App.stock.filter(function (s) { return String(s.branch_id || '') === String(stockView); });
+}
+
+// render ตาราง + stats ตามมุมมอง แล้วค่อยกรองด้วยคำค้น
+function applyStockView() {
+  const rows = stockViewRows();
+  const total = rows.length;
+  const low   = rows.filter(s => parseFloat(s.quantity || 0) <= parseFloat(s.min_stock || 0) && parseFloat(s.min_stock || 0) > 0).length;
+  const value = rows.reduce((sum, s) => sum + parseFloat(s.quantity || 0) * parseFloat(s.cost_price || 0), 0);
+  $('#stock-stat-total').text(total);
+  $('#stock-stat-low').text(low);
+  $('#stock-stat-value').text(Fmt.currency(value));
+
+  const q = ($('#stock-search').val() || '').toLowerCase();
+  const filtered = q
+    ? rows.filter(s => (s.product_name || '').toLowerCase().includes(q) || (s.product_code || '').toLowerCase().includes(q))
+    : rows;
+  renderStockTable(filtered);
 }
 
 function renderStockTable(data) {
@@ -883,12 +945,24 @@ function renderStockTable(data) {
     const minQty = parseFloat(s.min_stock || 0);
     const val    = qty * parseFloat(s.cost_price || 0);
     const isLow  = minQty > 0 && qty <= minQty;
+    const isAgg  = !!s._aggregated;
     const safeName = (s.product_name || '').replace(/'/g, "\\'");
-    const orderBtn = isLow
+    const orderBtn = (!isAgg && isLow)
       ? `<button class="btn btn-sm btn-warning" title="${t('btn_order')}"
            onclick="window.location.href='/dashboard/purchase/?new=1&product=${encodeURIComponent(s.product_id)}'">
            <i class="fas fa-shopping-cart me-1"></i>${t('btn_order')}</button>`
       : '';
+    // แถวรวมยอด: โชว์จำนวนสาขาแทนชื่อสาขา และซ่อนปุ่มที่ผูกกับ product_id เฉพาะสาขา
+    const brCell = isAgg
+      ? `<td class="col-branch"><span class="badge bg-light text-dark border fw-normal"><i class="fas fa-store-alt me-1 text-muted"></i>${s.branch_count} สาขา</span></td>`
+      : branchCell(s.branch_id);
+    const actionCell = isAgg
+      ? '<td></td>'
+      : `<td class="text-end">
+        <button class="btn btn-sm btn-outline-info me-1" title="${t('btn_import_history')}"
+          onclick="openStockImportHistory('${s.product_id}', '${safeName}')">
+          <i class="fas fa-history"></i></button>${orderBtn}
+      </td>`;
     return `<tr ${isLow ? 'class="table-warning"' : ''}>
       <td><span class="fw-semibold">${s.product_code || '-'}</span></td>
       <td>${s.product_name || s.product_id}</td>
@@ -897,12 +971,8 @@ function renderStockTable(data) {
       <td class="text-end">${Fmt.currency(s.cost_price)}</td>
       <td class="text-end fw-semibold">${Fmt.currency(val)}</td>
       <td>${isLow ? `<span class="badge bg-danger">${t('status_low_badge')}</span>` : `<span class="badge bg-success">${t('status_normal_badge')}</span>`}</td>
-      ${branchCell(s.branch_id)}
-      <td class="text-end">
-        <button class="btn btn-sm btn-outline-info me-1" title="${t('btn_import_history')}"
-          onclick="openStockImportHistory('${s.product_id}', '${safeName}')">
-          <i class="fas fa-history"></i></button>${orderBtn}
-      </td>
+      ${brCell}
+      ${actionCell}
     </tr>`;
   }).join(''));
 }
@@ -1012,13 +1082,12 @@ async function saveExtraCost() {
   }
 }
 
-$('#stock-search').on('input', function () {
-  const q = $(this).val().toLowerCase();
-  const filtered = App.stock.filter(s =>
-    (s.product_name || '').toLowerCase().includes(q) ||
-    (s.product_code || '').toLowerCase().includes(q)
-  );
-  renderStockTable(filtered);
+$('#stock-search').on('input', function () { applyStockView(); });
+
+// เปลี่ยนสาขา/มุมมองภาพรวม → re-render ตาราง + stats
+$(document).on('change', '#stock-branch-filter', function () {
+  stockView = $(this).val();
+  applyStockView();
 });
 
 // ============================================================
@@ -1085,38 +1154,77 @@ async function openWithdrawalModal() {
   new bootstrap.Modal('#modalWithdrawal').show();
 
   // ถ้ายังไม่มีข้อมูล (prefetch ยังไม่เสร็จ) → โหลดก่อนสร้าง dropdown
-  if (!App.products.length || !App.recipients.length) {
+  const needProducts   = !App.products.length;
+  const needRecipients = !App.recipients.length;
+  const needBranches   = !(App.branches && App.branches.length);
+  const needStock      = !(App.stock && App.stock.length);
+  if (needProducts || needRecipients || needBranches || needStock) {
     $('#wd-items-container').html(
       '<div class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลดข้อมูล...</div>'
     );
     try {
-      const fetchers = [];
-      if (!App.products.length)   fetchers.push(API.getProducts());
-      if (!App.recipients.length) fetchers.push(API.getRecipients());
-      const results = await Promise.all(fetchers);
-      let i = 0;
-      if (!App.products.length   && results[i] && results[i].success)   { App.products   = results[i++].data || []; }
-      if (!App.recipients.length && results[i] && results[i].success)   { App.recipients = results[i].data   || []; }
+      const [pr, rr, br, sr] = await Promise.all([
+        needProducts   ? API.getProducts()   : Promise.resolve(null),
+        needRecipients ? API.getRecipients() : Promise.resolve(null),
+        needBranches   ? API.getBranches()   : Promise.resolve(null),
+        needStock      ? API.getStock()      : Promise.resolve(null)
+      ]);
+      if (pr && pr.success) App.products   = pr.data || [];
+      if (rr && rr.success) App.recipients = rr.data || [];
+      if (br && br.success) App.branches   = br.data || [];
+      if (sr && sr.success) App.stock      = sr.data || [];
     } catch (_) {}
     $('#wd-items-container').html('');
   }
 
+  populateWdBranchSelect();
   addWdItem();
   calcWdTotal();
   populateRecipientSelects();
 }
 
+// เติม dropdown สาขาในโมดอลเบิก — superadmin เลือกได้ทุกสาขา / admin+staff ล็อกที่สาขาตัวเอง
+function populateWdBranchSelect() {
+  const isSuper  = Auth.isSuperAdmin();
+  const myBranch = Auth.getBranchId();
+  let opts = '<option value="">-- เลือกสาขา --</option>';
+  (App.branches || []).forEach(function (b) {
+    if (!isSuper && String(b.id) !== String(myBranch)) return;
+    opts += `<option value="${b.id}">${b.name || b.id}</option>`;
+  });
+  $('#wd-branch').html(opts);
+  // admin/staff: ล็อกที่สาขาตัวเอง (เลือกอัตโนมัติ + ปิดการแก้)
+  $('#wd-branch').val(isSuper ? '' : (myBranch || ''));
+  $('#wd-branch').prop('disabled', !isSuper && !!myBranch);
+}
+
+// สินค้าเฉพาะสาขาที่เลือกในโมดอลเบิก (กัน superadmin เลือกสินค้าผิดสาขาแล้วตัดสต็อกไม่ตรง lot)
+function wdBranchProducts() {
+  const bid = $('#wd-branch').val();
+  if (!bid) return [];
+  return (App.products || []).filter(function (p) { return String(p.branch_id || '') === String(bid); });
+}
+
+// เปลี่ยนสาขา → ล้างรายการเดิม (กัน product_id ค้างจากสาขาอื่น) แล้วเริ่มแถวใหม่
+function onWdBranchChange() {
+  $('#wd-items-container').html('');
+  addWdItem();
+  calcWdTotal();
+}
+
 function addWdItem() {
   const id = Date.now();
-  const prodOpts = App.products.map(p =>
+  const branchChosen = !!$('#wd-branch').val();
+  const prodOpts = wdBranchProducts().map(p =>
     `<option value="${p.id}" data-name="${p.name}" data-unit="${p.unit}" data-cost="${p.cost_price}">${p.name} (${p.code || '-'})</option>`
   ).join('');
+  const placeholder = branchChosen ? '-- เลือกสินค้า --' : '-- เลือกสาขาก่อน --';
   const html = `<div class="item-row" id="wdi-${id}">
     <div class="row g-2 align-items-end">
       <div class="col-md-5">
         <label class="form-label small mb-1">สินค้า</label>
         <select class="form-select form-select-sm wd-product-select" onchange="onWdProductChange(this)">
-          <option value="">-- เลือกสินค้า --</option>${prodOpts}</select>
+          <option value="">${placeholder}</option>${prodOpts}</select>
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">คงเหลือ</label>
@@ -1170,7 +1278,9 @@ async function saveWithdrawal() {
   const department    = $('#wd-department').val();
   const wdDate        = $('#wd-date').val();
   const type          = $('#wd-type').val();
+  const branchId      = $('#wd-branch').val();
 
+  if (!branchId) { showToast('กรุณาเลือกสาขาที่เบิกสินค้า', 'warning'); return; }
   if (!recipientId || !wdDate) { showToast('กรุณากรอกข้อมูลให้ครบ', 'warning'); return; }
 
   const items = [];
@@ -1196,7 +1306,7 @@ async function saveWithdrawal() {
   const payload = {
     recipient_id: recipientId, recipient_name: recipientName, department,
     withdrawal_date: wdDate, type, items, notes: $('#wd-notes').val(),
-    status: 'pending', created_by: App.user.name
+    status: 'pending', created_by: App.user.name, branch_id: branchId
   };
 
   $('#btn-save-wd').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');
