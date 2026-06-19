@@ -20,7 +20,7 @@ function setupAllSheets() {
     'Imports':     ['id','order_date','supplier','items','yuan_amount','exchange_rate','base_cost_thb','freight_cost','import_costs','additional_costs','total_cost','status','notes','created_at','created_by','branch_id'],
     'Withdrawals': ['id','withdrawal_date','recipient_id','recipient_name','department','items','total_value','type','notes','status','created_by','created_at','branch_id','doc_no','deposit'],
     'Recipients':  ['id','name','department','position','phone','email','notes','status','created_at','branch_id','tax_id','address'],
-    'Transfers':   ['id','transfer_date','product_id','product_name','product_code','quantity','from_branch_id','to_branch_id','transport_cost','labor_cost','unit_cost','dest_unit_cost','total_value','notes','created_by','created_at'],
+    'Transfers':   ['id','transfer_date','product_id','product_name','product_code','quantity','from_branch_id','to_branch_id','transport_cost','labor_cost','unit_cost','dest_unit_cost','total_value','notes','created_by','created_at','batch_id','status'],
     'Expenses':    ['id','date','category','description','amount','branch_id','created_at','created_by'],
     'ExpenseCategories': ['name']
   };
@@ -128,6 +128,7 @@ function processRequest(action, params, body) {
       case 'partialReturn':          return withLock(function() { return partialReturn(p); });
       case 'getTransfers':           return getTransfers(p);
       case 'addTransfer':            return withLock(function() { return addTransfer(p); });
+      case 'cancelTransfer':         return withLock(function() { return cancelTransfer(p); });
       case 'getRecipients':          return getRecipients(p);
       case 'addRecipient':           return addRecipient(p);
       case 'updateRecipient':        return updateRecipient(p);
@@ -438,6 +439,32 @@ function deductStockFIFO(productId, quantity) {
       remaining = 0;
     }
     sheet.getRange(rowNo, 9).setValue(now());
+  }
+}
+
+// FIFO deduction เฉพาะ lot ในสาขาที่ระบุ (ใช้ตอนโยกข้ามสาขา — กันตัดสต็อกสาขาอื่นพลาด
+// กรณี product_id เดียวกันมี lot อยู่หลายสาขา หรือ product.branch_id ว่าง/ไม่ตรง)
+// คอลัมน์ Stock (0-based): 1=product_id, 5=quantity, 8=last_updated, 9=branch_id
+function deductStockFIFOInBranch(productId, quantity, branchId) {
+  var sheet = getSheet('Stock');
+  if (!sheet || sheet.getLastRow() < 2) return;
+  var remaining = parseFloat(quantity);
+  var lastRow = sheet.getLastRow();
+  var allVals = sheet.getRange(2, 1, lastRow - 1, 10).getValues(); // อ่านถึง branch_id (คอลัมน์ที่ 10)
+  for (var i = 0; i < allVals.length && remaining > 0; i++) {
+    if (String(allVals[i][1]) !== String(productId)) continue;       // col 1 = product_id
+    if (String(allVals[i][9] || '') !== String(branchId)) continue;  // col 9 = branch_id
+    var rowNo = i + 2;
+    var qty = parseFloat(allVals[i][5]) || 0;                        // col 5 = quantity
+    if (qty <= 0) continue;
+    if (qty <= remaining) {
+      sheet.getRange(rowNo, 6).setValue(0);
+      remaining -= qty;
+    } else {
+      sheet.getRange(rowNo, 6).setValue(qty - remaining);
+      remaining = 0;
+    }
+    sheet.getRange(rowNo, 9).setValue(now());                        // col 9 (1-based) = last_updated
   }
 }
 
@@ -1025,14 +1052,28 @@ function addTransfer(data) {
   var auth = requireAuth(data, ['admin', 'superadmin']);
   if (!auth.ok) return { success: false, message: auth.message };
 
-  var productId  = data.product_id;
-  var qty        = parseFloat(data.quantity) || 0;
   var fromBranch = String(data.from_branch_id || '');
   var toBranch   = String(data.to_branch_id || '');
   var transport  = parseFloat(data.transport_cost) || 0;
   var labor      = parseFloat(data.labor_cost) || 0;
 
-  if (!productId || qty <= 0)   return { success: false, message: 'กรุณาเลือกสินค้าและจำนวนที่ถูกต้อง' };
+  // รองรับหลายรายการ (data.items) และรูปแบบเดิมรายการเดียว (product_id/quantity)
+  var rawItems = Array.isArray(data.items) ? data.items : [];
+  if (!rawItems.length && data.product_id) {
+    rawItems = [{ product_id: data.product_id, product_name: data.product_name, quantity: data.quantity }];
+  }
+  // รวมสินค้าซ้ำ (product_id เดียวกัน) → จำนวนรวมกัน
+  var mergedMap = {};
+  rawItems.forEach(function(it) {
+    var pid = it && it.product_id;
+    var q   = parseFloat(it && it.quantity) || 0;
+    if (!pid || q <= 0) return;
+    if (!mergedMap[pid]) mergedMap[pid] = { product_id: pid, product_name: it.product_name || '', quantity: 0 };
+    mergedMap[pid].quantity += q;
+  });
+  var items = Object.keys(mergedMap).map(function(k) { return mergedMap[k]; });
+
+  if (!items.length)            return { success: false, message: 'กรุณาเลือกสินค้าและจำนวนที่ถูกต้อง' };
   if (!fromBranch || !toBranch) return { success: false, message: 'กรุณาเลือกสาขาต้นทางและปลายทาง' };
   if (fromBranch === toBranch)  return { success: false, message: 'สาขาต้นทางและปลายทางต้องไม่เหมือนกัน' };
 
@@ -1041,54 +1082,190 @@ function addTransfer(data) {
     return { success: false, message: 'คุณย้ายของได้เฉพาะจากสาขาของตัวเองเท่านั้น' };
   }
 
-  var stockSheet = getSheet('Stock');
-  var prodSheet  = getSheet('Products');
-  if (!stockSheet || !prodSheet) return { success: false, message: 'ไม่พบชีท Stock/Products' };
-
-  // สินค้าต้นทาง + ตรวจว่าอยู่สาขาต้นทางจริง
-  var products = sheetToObjects(prodSheet);
-  var srcProd  = products.find(function(pp) { return String(pp.id) === String(productId); });
-  if (!srcProd) return { success: false, message: 'ไม่พบสินค้าต้นทาง' };
-  if (String(srcProd.branch_id || '') !== fromBranch) {
-    return { success: false, message: 'สินค้าที่เลือกไม่ได้อยู่ในสาขาต้นทาง' };
-  }
-
-  // lots ของสินค้าต้นทาง (เรียงตามแถว = FIFO) — ตรวจของที่มี + คำนวณต้นทุน FIFO ของจำนวนที่ตัด
-  var lots  = sheetToObjects(stockSheet).filter(function(l) { return String(l.product_id) === String(productId); });
-  var avail = lots.reduce(function(s, l) { return s + (parseFloat(l.quantity) || 0); }, 0);
-  if (avail < qty) return { success: false, message: 'สต็อกต้นทางไม่พอ (คงเหลือ ' + avail + ')' };
-
-  var need = qty, costSum = 0;
-  for (var i = 0; i < lots.length && need > 0; i++) {
-    var lq = parseFloat(lots[i].quantity) || 0;
-    if (lq <= 0) continue;
-    var take = Math.min(lq, need);
-    costSum += take * (parseFloat(lots[i].cost_price) || 0);
-    need -= take;
-  }
-  var srcUnitCost  = qty > 0 ? costSum / qty : 0;
-  var destUnitCost = qty > 0 ? (costSum + transport + labor) / qty : 0;
-
-  // ตัดสต็อกต้นทาง (product_id unique ต่อสาขา → กระทบเฉพาะสาขาต้นทาง)
-  deductStockFIFO(productId, qty);
-
-  // สินค้าปลายทาง — จับคู่ด้วย code (ถ้าไม่มี → สร้าง Product ใหม่ในสาขาปลายทาง)
-  var code = srcProd.code || '';
-  var destProductId = resolveProductInBranch(srcProd, toBranch, 'โยกมาจากสาขา ' + fromBranch);
-
-  // เพิ่ม lot ที่สาขาปลายทาง (ต้นทุน/หน่วย รวมค่าขนส่ง+ค่าแรงแล้ว)
-  addStockLot(destProductId, qty, destUnitCost, toBranch);
-
-  // บันทึกประวัติการโยก
+  var stockSheet    = getSheet('Stock');
+  var prodSheet     = getSheet('Products');
   var transferSheet = getSheet('Transfers');
-  if (!transferSheet) return { success: false, message: 'ไม่พบชีท Transfers กรุณารัน setupAllSheets' };
-  var id = uid('TRF');
-  transferSheet.appendRow([id, data.transfer_date || now(), productId,
-    srcProd.name || data.product_name || '', code, qty, fromBranch, toBranch,
-    transport, labor, srcUnitCost, destUnitCost, qty * destUnitCost,
-    data.notes || '', data.created_by || auth.user.name || '', now()]);
+  if (!stockSheet || !prodSheet) return { success: false, message: 'ไม่พบชีท Stock/Products' };
+  if (!transferSheet)            return { success: false, message: 'ไม่พบชีท Transfers กรุณารัน setupAllSheets' };
 
-  return { success: true, id: id, message: 'โยกของสำเร็จ' };
+  var products = sheetToObjects(prodSheet);
+  var allLots  = sheetToObjects(stockSheet);
+  var totalQty = items.reduce(function(s, it) { return s + it.quantity; }, 0);
+
+  // ---- PASS 1: ตรวจสอบทุกรายการก่อน (all-or-nothing) + คำนวณต้นทุน FIFO ของจำนวนที่ตัด ----
+  var prepared = [];
+  for (var n = 0; n < items.length; n++) {
+    var it      = items[n];
+    var srcProd = products.find(function(pp) { return String(pp.id) === String(it.product_id); });
+    if (!srcProd) return { success: false, message: 'ไม่พบสินค้าต้นทาง: ' + (it.product_name || it.product_id) };
+    // ตรวจจาก "สต็อกในสาขาต้นทาง" (อิงชีต Stock เหมือน dropdown) ไม่อิง product.branch_id
+    // เพราะสินค้าที่ superadmin สร้างอาจมี product.branch_id ว่าง แต่ stock ผูกสาขาจริง
+    var lots  = allLots.filter(function(l) {
+      return String(l.product_id) === String(it.product_id) && String(l.branch_id || '') === fromBranch;
+    });
+    var avail = lots.reduce(function(s, l) { return s + (parseFloat(l.quantity) || 0); }, 0);
+    if (avail < it.quantity) {
+      return { success: false, message: 'สต็อก "' + (srcProd.name || it.product_id) + '" ในสาขาต้นทางไม่พอ (คงเหลือ ' + avail + ')' };
+    }
+    var need = it.quantity, costSum = 0;
+    for (var i = 0; i < lots.length && need > 0; i++) {
+      var lq = parseFloat(lots[i].quantity) || 0;
+      if (lq <= 0) continue;
+      var take = Math.min(lq, need);
+      costSum += take * (parseFloat(lots[i].cost_price) || 0);
+      need -= take;
+    }
+    prepared.push({ srcProd: srcProd, item: it, costSum: costSum });
+  }
+
+  // ---- PASS 2: ตัดสต็อกต้นทาง + เพิ่ม lot ปลายทาง + บันทึกประวัติ ----
+  // ค่าขนส่ง+ค่าแรง กระจายตามสัดส่วนจำนวน (capitalize เข้าต้นทุนปลายทางของแต่ละรายการ)
+  // batchId = รหัสกลุ่มของการโยกครั้งนี้ (ทุกแถวใช้ร่วมกัน → frontend รวมเป็นรายการเดียว)
+  var batchId = uid('TRB');
+  var ids = [];
+  for (var m = 0; m < prepared.length; m++) {
+    var pr  = prepared[m];
+    var q   = pr.item.quantity;
+    var shTransport = totalQty > 0 ? transport * (q / totalQty) : 0;
+    var shLabor     = totalQty > 0 ? labor     * (q / totalQty) : 0;
+    var srcUnitCost  = q > 0 ? pr.costSum / q : 0;
+    var destUnitCost = q > 0 ? (pr.costSum + shTransport + shLabor) / q : 0;
+
+    // ตัดสต็อกเฉพาะ lot ในสาขาต้นทาง (กันตัดสต็อกสาขาอื่นพลาด)
+    deductStockFIFOInBranch(pr.item.product_id, q, fromBranch);
+
+    // สินค้าปลายทาง — จับคู่ด้วย code (ถ้าไม่มี → สร้าง Product ใหม่ในสาขาปลายทาง)
+    var destProductId = resolveProductInBranch(pr.srcProd, toBranch, 'โยกมาจากสาขา ' + fromBranch);
+    addStockLot(destProductId, q, destUnitCost, toBranch);
+
+    var id = uid('TRF');
+    transferSheet.appendRow([id, data.transfer_date || now(), pr.item.product_id,
+      pr.srcProd.name || pr.item.product_name || '', pr.srcProd.code || '', q, fromBranch, toBranch,
+      shTransport, shLabor, srcUnitCost, destUnitCost, q * destUnitCost,
+      data.notes || '', data.created_by || auth.user.name || '', now(), batchId, 'completed']);
+    ids.push(id);
+  }
+
+  return { success: true, ids: ids, batch_id: batchId, count: ids.length, message: 'โยกของสำเร็จ (' + ids.length + ' รายการ)' };
+}
+
+// ยกเลิกการโยก — ดึงของกลับ (ตัดสต็อกปลายทาง + คืนกลับต้นทาง) แล้ว "ลบแถว" ออกจากชีต Transfers
+// อ้างอิงด้วย batch_id (กลุ่มของการโยกครั้งเดียว) — ข้อมูลเก่าที่ไม่มี batch_id ใช้ id แทน
+// หาสต็อกปลายทางจากชีต Stock โดยตรงด้วย product_code (ทนต่อ product.branch_id ที่ว่าง/เพี้ยน)
+function cancelTransfer(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Transfers');
+  if (!sheet) return { success: false, message: 'ไม่พบชีท Transfers' };
+
+  var key = String(data.batch_id || data.id || '');
+  if (!key) return { success: false, message: 'ไม่ระบุรายการที่จะยกเลิก' };
+
+  var rows = sheetToObjects(sheet);
+  // หาแถว seed ที่ key ตรงกับ batch_id หรือ id (รองรับ frontend ที่ถือ key เก่าอิง id ก่อน backfill)
+  var seed = null;
+  for (var s = 0; s < rows.length; s++) {
+    if (String(rows[s].batch_id || '') === key || String(rows[s].id) === key) { seed = rows[s]; break; }
+  }
+  if (!seed) return { success: false, message: 'ไม่พบรายการโยก' };
+  var realKey = String(seed.batch_id || seed.id);
+
+  // เก็บ index จริงในชีต (0-based) ของทุกแถวในกลุ่มเดียวกัน — ใช้ตอน deleteRow
+  var groupIdx = [];
+  rows.forEach(function(r, i) { if (String(r.batch_id || r.id) === realKey) groupIdx.push(i); });
+  if (!groupIdx.length) return { success: false, message: 'ไม่พบรายการโยก' };
+
+  var groupRows = groupIdx.map(function(i) { return rows[i]; });
+  // คืนสต็อกเฉพาะแถวที่ยังไม่เคยยกเลิก (กันคืนซ้ำกับข้อมูลเก่าที่ status=cancelled)
+  var active = groupRows.filter(function(r) { return String(r.status || 'completed') !== 'cancelled'; });
+
+  var fromBranch = String(groupRows[0].from_branch_id || '');
+  var toBranch   = String(groupRows[0].to_branch_id || '');
+
+  // admin ยกเลิกได้เฉพาะการโยกที่ต้นทางเป็นสาขาตัวเอง (superadmin ได้ทั้งหมด)
+  if (auth.user.role !== 'superadmin' && fromBranch !== String(auth.user.branch_id || '')) {
+    return { success: false, message: 'คุณยกเลิกได้เฉพาะการโยกจากสาขาของตัวเองเท่านั้น' };
+  }
+
+  var allLots = sheetToObjects(getSheet('Stock'));
+
+  // ---- PASS 1: ตรวจว่าปลายทางยังมีของพอให้ดึงกลับทุกแถว (all-or-nothing) ----
+  var plan = [];
+  for (var i = 0; i < active.length; i++) {
+    var r     = active[i];
+    var q     = parseFloat(r.quantity) || 0;
+    if (q <= 0) continue;
+    var code  = String(r.product_code || '');
+    var pname = String(r.product_name || '');
+    // หาสต็อกปลายทางจากชีต Stock โดยตรง: branch=ปลายทาง + product_code ตรง (ถ้าไม่มี code → ชื่อ)
+    var destLots = allLots.filter(function(l) {
+      if (String(l.branch_id || '') !== toBranch) return false;
+      return code ? String(l.product_code || '') === code : String(l.product_name || '') === pname;
+    });
+    var destPid = destLots.length ? destLots[0].product_id : null;
+    // นับคงเหลือเฉพาะ product_id ที่จะตัดจริง (กัน code ซ้ำหลาย product)
+    var destAvail = destPid ? destLots.filter(function(l) { return String(l.product_id) === String(destPid); })
+      .reduce(function(s, l) { return s + (parseFloat(l.quantity) || 0); }, 0) : 0;
+    if (!destPid || destAvail < q) {
+      return { success: false, message: 'ยกเลิกไม่ได้: "' + (pname || code) +
+        '" ที่ปลายทางคงเหลือ ' + destAvail + ' (ต้องคืน ' + q + ') — อาจถูกเบิก/โยกต่อไปแล้ว' };
+    }
+    plan.push({ q: q, destPid: destPid, srcPid: r.product_id, srcCost: parseFloat(r.unit_cost) || 0 });
+  }
+
+  // ---- PASS 2: ตัดของออกจากปลายทาง + คืนกลับต้นทาง (ต้นทุนเดิม) ----
+  for (var j = 0; j < plan.length; j++) {
+    var pl = plan[j];
+    deductStockFIFOInBranch(pl.destPid, pl.q, toBranch);
+    addStockLot(pl.srcPid, pl.q, pl.srcCost, fromBranch);
+  }
+
+  // ---- ลบแถวออกจากชีต Transfers (ลบจากล่างขึ้นบน ไม่ให้ index เลื่อน) ----
+  var rowNumbers = groupIdx.map(function(i) { return i + 2; }).sort(function(a, b) { return b - a; });
+  rowNumbers.forEach(function(rn) { sheet.deleteRow(rn); });
+
+  return { success: true, count: plan.length, message: 'ยกเลิกและลบรายการโยกสำเร็จ (คืนของกลับสาขาต้นทางแล้ว)' };
+}
+
+// Migration (รันครั้งเดียวจาก Apps Script Editor): เติม batch_id ให้แถวโยกเก่าที่ยังไม่มี
+// จัดกลุ่มแถวที่ from/to/ผู้ทำ/วันที่เดียวกัน และ created_at ห่างกันไม่เกิน 60 วินาที = ใบเดียวกัน
+// (heuristic สำหรับข้อมูลเก่าเท่านั้น — การโยกใหม่ผูก batch_id แม่นยำอยู่แล้ว)
+function backfillTransferBatches() {
+  var sheet = getSheet('Transfers');
+  if (!sheet || sheet.getLastRow() < 2) return 'ไม่มีข้อมูลให้จัดกลุ่ม';
+  var hdrs      = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var batchCol  = hdrs.indexOf('batch_id');
+  var statusCol = hdrs.indexOf('status');
+  if (batchCol === -1) return 'ยังไม่มีคอลัมน์ batch_id — กรุณารัน setupAllSheets() ก่อน';
+
+  var rows = sheetToObjects(sheet);
+  var used = {}, assigned = 0, groups = 0;
+  for (var i = 0; i < rows.length; i++) {
+    if (used[i] || rows[i].batch_id) continue;       // ข้ามแถวที่มี batch แล้ว
+    var a = rows[i];
+    var tA = new Date(a.created_at).getTime();
+    var batchId = uid('TRB');
+    var members = [i];
+    for (var j = i + 1; j < rows.length; j++) {
+      if (used[j] || rows[j].batch_id) continue;
+      var b = rows[j];
+      var same = String(b.from_branch_id) === String(a.from_branch_id) &&
+                 String(b.to_branch_id)   === String(a.to_branch_id) &&
+                 String(b.created_by || '') === String(a.created_by || '') &&
+                 String(b.transfer_date || '') === String(a.transfer_date || '');
+      if (same && Math.abs(new Date(b.created_at).getTime() - tA) <= 60000) members.push(j);
+    }
+    members.forEach(function(idx) {
+      used[idx] = true;
+      sheet.getRange(idx + 2, batchCol + 1).setValue(batchId);
+      if (statusCol !== -1 && !rows[idx].status) sheet.getRange(idx + 2, statusCol + 1).setValue('completed');
+      assigned++;
+    });
+    groups++;
+  }
+  var msg = 'จัดกลุ่มแล้ว ' + assigned + ' แถว → ' + groups + ' ใบโยก';
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
+  return msg;
 }
 
 // ---------- Recipients ----------

@@ -35,10 +35,12 @@
     <div class="table-responsive">
       <table class="table">
         <thead><tr>
-          <th>รหัส</th><th>วันที่</th><th>สินค้า</th>
-          <th class="text-center">จำนวน</th><th>จาก → ไป</th>
-          <th class="text-end">ต้นทุน/หน่วย (ปลายทาง)</th>
-          <th class="text-end">ค่าขนส่ง+แรง</th><th>โดย</th>
+          <th>วันที่</th><th>จาก → ไป</th>
+          <th class="text-center">รายการ</th>
+          <th class="text-end">มูลค่ารวม</th>
+          <th class="text-end">ค่าขนส่ง+แรง</th>
+          <th>โดย</th><th>สถานะ</th>
+          <th class="text-end">จัดการ</th>
         </tr></thead>
         <tbody id="tf-table-body">
           <tr><td colspan="8" class="text-center text-muted py-5"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>
@@ -63,54 +65,83 @@
       </div>
       <div class="modal-body">
         <form id="tf-form">
-          <div class="row g-3 mb-3">
-            <div class="col-md-6">
-              <label class="form-label">ย้ายจากสาขา (ต้นทาง) <span class="text-danger">*</span></label>
-              <select class="form-select" id="tf-from" onchange="onTransferFromChange()"><option value="">-- เลือกสาขาต้นทาง --</option></select>
+          <!-- เส้นทางการโยก: ต้นทาง → ปลายทาง -->
+          <div class="tf-route mb-4">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-5 col-12">
+                <label class="form-label mb-1"><i class="fas fa-store-alt me-1 text-muted"></i>จากสาขา (ต้นทาง) <span class="text-danger">*</span></label>
+                <select class="form-select" id="tf-from" onchange="onTransferFromChange()"><option value="">-- เลือกสาขาต้นทาง --</option></select>
+              </div>
+              <div class="col-md-2 col-12 text-center pb-1">
+                <span class="tf-route-arrow"><i class="fas fa-arrow-right-long d-none d-md-inline"></i><i class="fas fa-arrow-down d-md-none"></i></span>
+              </div>
+              <div class="col-md-5 col-12">
+                <label class="form-label mb-1"><i class="fas fa-warehouse me-1 text-muted"></i>ไปสาขา (ปลายทาง) <span class="text-danger">*</span></label>
+                <select class="form-select" id="tf-to"><option value="">-- เลือกสาขาปลายทาง --</option></select>
+              </div>
             </div>
-            <div class="col-md-6">
-              <label class="form-label">ย้ายไปสาขา (ปลายทาง) <span class="text-danger">*</span></label>
-              <select class="form-select" id="tf-to"><option value="">-- เลือกสาขาปลายทาง --</option></select>
-            </div>
-          </div>
-          <div class="row g-3 mb-3">
-            <div class="col-md-7">
-              <label class="form-label">ของที่จะย้าย <span class="text-danger">*</span></label>
-              <select class="form-select" id="tf-product" onchange="onTransferProductChange()"><option value="">-- เลือกสาขาต้นทางก่อน --</option></select>
-              <div class="form-text" id="tf-avail">&nbsp;</div>
-            </div>
-            <div class="col-md-2">
-              <label class="form-label">วันที่</label>
-              <input type="date" class="form-control" id="tf-date">
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">จำนวนที่ย้าย <span class="text-danger">*</span></label>
-              <input type="number" class="form-control" id="tf-qty" min="0" step="any" value="0" oninput="calcTransferPreview()">
+            <div class="row g-3 mt-1">
+              <div class="col-md-4 col-6">
+                <label class="form-label mb-1">วันที่โยก</label>
+                <input type="date" class="form-control" id="tf-date">
+              </div>
             </div>
           </div>
-          <div class="row g-3 mb-3">
-            <div class="col-md-4">
-              <label class="form-label">ค่าขนส่ง (฿)</label>
+
+          <!-- รายการสินค้า -->
+          <div class="modal-subhead"><i class="fas fa-boxes-stacked"></i>รายการสินค้าที่จะย้าย <span class="text-danger ms-1">*</span></div>
+          <div class="d-flex justify-content-end mb-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTransferItem()"><i class="fas fa-plus me-1"></i>เพิ่มรายการ</button>
+          </div>
+          <div id="tf-items-container" class="mb-4"></div>
+
+          <!-- ค่าใช้จ่าย -->
+          <div class="modal-subhead"><i class="fas fa-coins"></i>ค่าใช้จ่ายในการโยก <small class="text-muted text-lowercase fw-normal ms-1" style="letter-spacing:0;">(เฉลี่ยเข้าต้นทุนปลายทางตามจำนวน)</small></div>
+          <div class="row g-3 mb-4">
+            <div class="col-md-4 col-6">
+              <label class="form-label mb-1">ค่าขนส่ง (฿)</label>
               <input type="number" class="form-control" id="tf-transport" min="0" step="any" value="0" oninput="calcTransferPreview()">
             </div>
-            <div class="col-md-4">
-              <label class="form-label">ค่ายกแรงงาน (฿)</label>
+            <div class="col-md-4 col-6">
+              <label class="form-label mb-1">ค่ายกแรงงาน (฿)</label>
               <input type="number" class="form-control" id="tf-labor" min="0" step="any" value="0" oninput="calcTransferPreview()">
             </div>
-            <div class="col-md-4">
-              <label class="form-label">หมายเหตุ</label>
+            <div class="col-md-4 col-12">
+              <label class="form-label mb-1">หมายเหตุ</label>
               <input type="text" class="form-control" id="tf-notes" placeholder="หมายเหตุ...">
             </div>
           </div>
-          <div class="alert alert-info mb-0 d-flex justify-content-between align-items-center">
-            <span><i class="fas fa-calculator me-2"></i>ต้นทุน/หน่วยที่สาขาปลายทาง โดยประมาณ (รวมค่าขนส่ง+แรง)</span>
-            <strong id="tf-dest-cost">฿0.00</strong>
+
+          <!-- สรุปต้นทุน -->
+          <div class="d-flex justify-content-end">
+            <div class="cost-summary" style="min-width:320px;">
+              <div class="cost-row"><span>มูลค่าสินค้า (ต้นทุนต้นทาง)</span><span id="tf-sum-goods">฿0.00</span></div>
+              <div class="cost-row"><span>ค่าขนส่ง + ค่ายกแรงงาน</span><span id="tf-sum-extra">฿0.00</span></div>
+              <div class="cost-row total"><span>มูลค่ารวมที่ปลายทาง <small class="text-muted fw-normal">(โดยประมาณ)</small></span><span id="tf-dest-cost">฿0.00</span></div>
+            </div>
           </div>
         </form>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="btn_cancel">ยกเลิก</button>
         <button type="button" class="btn btn-primary" id="btn-save-tf" onclick="saveTransfer()"><i class="fas fa-dolly me-1"></i>ยืนยันโยกของ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: รายละเอียดการโยก -->
+<div class="modal fade" id="modalTransferDetail" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-dolly me-2"></i>รายละเอียดการโยก</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="tf-detail-body"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-danger me-auto" id="tf-detail-cancel-btn" onclick="cancelTransferFromDetail()"><i class="fas fa-ban me-1"></i>ยกเลิกการโยกนี้</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ปิด</button>
       </div>
     </div>
   </div>

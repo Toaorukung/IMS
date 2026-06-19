@@ -60,6 +60,7 @@ const API = (() => {
     // Transfers (โยกของข้ามโกดัง/สาขา)
     getTransfers: ()  => get('getTransfers', { branch_id: Auth.getBranchId() }),
     addTransfer:  (d) => post({ action: 'addTransfer', ...d }),
+    cancelTransfer: (d) => post({ action: 'cancelTransfer', ...d }),
 
     // Recipients
     getRecipients:   ()  => get('getRecipients',  { branch_id: Auth.getBranchId() }),
@@ -140,9 +141,17 @@ const Auth = (() => {
           sessionStorage.setItem(CONFIG.USER_KEY, JSON.stringify(res.user)); // sync display
           return { ok: true, user: res.user };
         }
-      } catch (_) { /* network error */ }
-      _verifiedRole = null;
-      return { ok: false };
+        // Server ยืนยันชัดเจนว่า token ใช้ไม่ได้ (ถูกลบเพราะ login ซ้อน / หมดอายุ / บัญชีถูกระงับ)
+        // → ล้าง sessionStorage ทิ้ง ไม่งั้นหน้า login จะเห็น token ค้างแล้วเด้งกลับ dashboard วนไม่จบ
+        _verifiedRole = null;
+        sessionStorage.removeItem(CONFIG.TOKEN_KEY);
+        sessionStorage.removeItem(CONFIG.USER_KEY);
+        return { ok: false, expired: true };
+      } catch (_) {
+        // Network error — ห้ามล้าง token (กัน logout เพราะเน็ตหลุดชั่วคราว)
+        _verifiedRole = null;
+        return { ok: false };
+      }
     },
 
     /** true เมื่อ server ยืนยันว่าเป็น admin หรือ superadmin */

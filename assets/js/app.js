@@ -27,10 +27,11 @@ $(document).ready(async function () {
 
   // 2. โหลด user จาก cache เพื่อ render sidebar ทันที (ไม่รอ server)
   const cachedUser = Auth.getUser();
-  if (!cachedUser) { window.location.replace('/login/'); return; }
+  if (!cachedUser) { Auth.clear(); window.location.replace('/login/'); return; }
 
   // ตั้ง role จาก cache เพื่อให้ initLayout ใช้ได้ทันที
   Auth.setCachedRole(cachedUser.role);
+  document.body.classList.toggle('is-superadmin', Auth.isSuperAdmin()); // เปิดคอลัมน์ "สาขา" ให้ superadmin
   App.user = cachedUser;
 
   // 3. Render sidebar และ UI ทันทีจาก cache (ไม่มี flash)
@@ -47,9 +48,15 @@ $(document).ready(async function () {
   // 4. Verify กับ server ใน background (security check)
   //    ถ้า token หมดอายุ / ถูกลบ / role เปลี่ยน → redirect
   Auth.verifyAccess().then(check => {
-    if (!check.ok) { window.location.replace('/login/'); return; }
+    if (!check.ok) {
+      // token ถูกลบ/หมดอายุจริง → token ถูกล้างแล้วใน verifyAccess → ไป login (หน้า login จะแสดงฟอร์ม ไม่เด้งกลับ)
+      // ถ้าเป็น network error (ไม่มี expired) → อยู่หน้าเดิมด้วย cache ไม่ต้องเด้ง กัน loop ตอนเน็ตหลุด
+      if (check.expired) window.location.replace('/login/');
+      return;
+    }
     // อัพเดท user จาก server (เผื่อ role หรือชื่อเปลี่ยน)
     App.user = check.user;
+    document.body.classList.toggle('is-superadmin', Auth.isSuperAdmin()); // ยืนยันสิทธิ์คอลัมน์สาขาจาก server
     $('#user-name').text(App.user.name || App.user.username);
     $('#user-role').text(Auth.isSuperAdmin() ? 'ผู้ดูแลระบบหลัก' : Auth.isAdmin() ? 'ผู้ดูแลระบบ' : 'พนักงาน');
     // อัพเดท branch badge หลัง server ยืนยัน (กรณี branch_name เปลี่ยน)
@@ -160,6 +167,73 @@ async function withBtnLoading(selector, restoreHtml, fn) {
   const $btn = $(selector);
   $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');
   try { await fn(); } finally { $btn.prop('disabled', false).html(restoreHtml); }
+}
+
+/**
+ * Custom confirm dialog (แทน window.confirm) — สวยกว่า + แสดงอนิเมชั่นกำลังโหลดระหว่าง action
+ * opts: { title, message(HTML), okText, okClass, icon, iconClass(warn|danger|info), loadingText, onConfirm:async }
+ * คืน Promise → resolve เป็นค่าที่ onConfirm คืน (หรือ true) ถ้ายืนยัน / false ถ้ายกเลิก
+ * ถ้า onConfirm โยน error → แสดง toast แล้วเปิด dialog ค้างไว้ให้กดใหม่/ปิดได้
+ */
+function uiConfirm(opts) {
+  opts = opts || {};
+  if (!document.getElementById('modalConfirm')) {
+    $('body').append(`
+      <div class="modal fade" id="modalConfirm" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-confirm">
+          <div class="modal-content">
+            <div class="confirm-overlay" id="confirm-overlay">
+              <div class="spinner-border"></div>
+              <div class="confirm-overlay-text mt-3" id="confirm-overlay-text">กำลังดำเนินการ...</div>
+            </div>
+            <div class="modal-body text-center p-4">
+              <div class="confirm-icon warn" id="confirm-icon"><i class="fas fa-exclamation-triangle"></i></div>
+              <h5 class="confirm-title mt-3 mb-2" id="confirm-title">ยืนยัน</h5>
+              <div class="confirm-msg text-muted" id="confirm-msg"></div>
+              <div class="d-flex gap-2 justify-content-center mt-4">
+                <button type="button" class="btn btn-light px-4" id="confirm-no">ยกเลิก</button>
+                <button type="button" class="btn btn-danger px-4" id="confirm-yes">ยืนยัน</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`);
+  }
+
+  return new Promise(function(resolve) {
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalConfirm'), { backdrop: 'static' });
+    $('#confirm-title').text(opts.title || 'ยืนยัน');
+    $('#confirm-msg').html(opts.message || '');
+    $('#confirm-yes').text(opts.okText || 'ยืนยัน').attr('class', 'btn px-4 ' + (opts.okClass || 'btn-danger'));
+    $('#confirm-icon').attr('class', 'confirm-icon ' + (opts.iconClass || 'warn'))
+      .html(`<i class="fas ${opts.icon || 'fa-exclamation-triangle'}"></i>`);
+    $('#confirm-overlay-text').text(opts.loadingText || 'กำลังดำเนินการ...');
+    $('#confirm-overlay').removeClass('show');
+    $('#confirm-yes, #confirm-no').prop('disabled', false);
+
+    let settled = false;
+    function close(val) {
+      settled = true;
+      $('#confirm-yes').off('click.cfm'); $('#confirm-no').off('click.cfm');
+      modal.hide();
+      resolve(val);
+    }
+    $('#confirm-no').off('click.cfm').on('click.cfm', function() { if (!settled) close(false); });
+    $('#confirm-yes').off('click.cfm').on('click.cfm', async function() {
+      if (settled) return;
+      $('#confirm-overlay').addClass('show');                 // อนิเมชั่นกำลังโหลด
+      $('#confirm-yes, #confirm-no').prop('disabled', true);
+      try {
+        const result = opts.onConfirm ? await opts.onConfirm() : true;
+        close(result === undefined ? true : result);
+      } catch (e) {
+        $('#confirm-overlay').removeClass('show');
+        $('#confirm-yes, #confirm-no').prop('disabled', false);
+        showToast((e && e.message) ? e.message : 'เกิดข้อผิดพลาด', 'danger');
+      }
+    });
+    modal.show();
+  });
 }
 
 /* ===== CONFIRM DIALOG ===== */
@@ -387,7 +461,7 @@ function renderLowStockList(items) {
 let purchaseFilter = 'all';
 async function loadPurchase() {
   try {
-    const res = await API.getImports();
+    const [res] = await Promise.all([API.getImports(), ensureBranchesLoaded()]);
     if (!res.success) throw new Error(res.message);
     App.imports = res.data || [];
     renderPurchaseTable(App.imports);
@@ -397,7 +471,7 @@ async function loadPurchase() {
 function renderPurchaseTable(data) {
   const filtered = purchaseFilter === 'all' ? data : data.filter(r => r.status === purchaseFilter);
   if (!filtered.length) {
-    $('#purchase-table-body').html('<tr><td colspan="8" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>');
+    $('#purchase-table-body').html(`<tr><td colspan="${colspanWithBranch(8)}" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>`);
     return;
   }
   $('#purchase-table-body').html(filtered.map(r => {
@@ -410,6 +484,7 @@ function renderPurchaseTable(data) {
       <td class="text-end">${Fmt.yuan(r.yuan_amount)} <small class="text-muted">× ${r.exchange_rate}</small></td>
       <td class="text-end fw-semibold">${Fmt.currency(r.total_cost)}</td>
       <td>${Fmt.statusBadge(r.status)}</td>
+      ${branchCell(r.branch_id)}
       <td>
         <button class="btn btn-sm btn-outline-primary me-1" onclick="viewImport('${r.id}')"><i class="fas fa-eye"></i></button>
         ${r.status !== 'received' ? `<button class="btn btn-sm btn-outline-success" onclick="markReceived('${r.id}')"><i class="fas fa-check"></i> รับของ</button>` : ''}
@@ -740,6 +815,7 @@ async function confirmReceived() {
 // ============================================================
 async function loadReceive() {
   try {
+    await ensureBranchesLoaded();
     if (!App.imports.length) {
       const res = await API.getImports();
       if (res.success) App.imports = res.data || [];
@@ -755,6 +831,7 @@ async function loadReceive() {
         <div class="panel-header">
           <div><span class="fw-bold">${r.id}</span> – ${r.supplier || '-'}
             <span class="ms-2">${Fmt.statusBadge(r.status)}</span>
+            ${Auth.isSuperAdmin() ? `<span class="badge bg-light text-dark border fw-normal ms-1"><i class="fas fa-store-alt me-1 text-muted"></i>${branchName(r.branch_id)}</span>` : ''}
           </div>
           <div class="d-flex gap-2 flex-wrap">
             <button class="btn btn-sm btn-outline-secondary" onclick="viewImport('${r.id}')"><i class="fas fa-eye me-1"></i>รายละเอียด</button>
@@ -782,7 +859,7 @@ async function loadReceive() {
 // ============================================================
 async function loadStock() {
   try {
-    const res = await API.getStock();
+    const [res] = await Promise.all([API.getStock(), ensureBranchesLoaded()]);
     if (!res.success) throw new Error(res.message);
     App.stock = res.data || [];
     renderStockTable(App.stock);
@@ -798,7 +875,7 @@ async function loadStock() {
 
 function renderStockTable(data) {
   if (!data.length) {
-    $('#stock-table-body').html('<tr><td colspan="8" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>');
+    $('#stock-table-body').html(`<tr><td colspan="${colspanWithBranch(8)}" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>`);
     return;
   }
   $('#stock-table-body').html(data.map(s => {
@@ -820,6 +897,7 @@ function renderStockTable(data) {
       <td class="text-end">${Fmt.currency(s.cost_price)}</td>
       <td class="text-end fw-semibold">${Fmt.currency(val)}</td>
       <td>${isLow ? `<span class="badge bg-danger">${t('status_low_badge')}</span>` : `<span class="badge bg-success">${t('status_normal_badge')}</span>`}</td>
+      ${branchCell(s.branch_id)}
       <td class="text-end">
         <button class="btn btn-sm btn-outline-info me-1" title="${t('btn_import_history')}"
           onclick="openStockImportHistory('${s.product_id}', '${safeName}')">
@@ -949,7 +1027,7 @@ $('#stock-search').on('input', function () {
 let wdFilter = 'all';
 async function loadWithdrawal() {
   try {
-    const res = await API.getWithdrawals();
+    const [res] = await Promise.all([API.getWithdrawals(), ensureBranchesLoaded()]);
     if (!res.success) throw new Error(res.message);
     App.withdrawals = res.data || [];
     renderWithdrawalTable(App.withdrawals);
@@ -971,7 +1049,7 @@ async function loadWithdrawal() {
 function renderWithdrawalTable(data) {
   const filtered = wdFilter === 'all' ? data : data.filter(r => r.status === wdFilter);
   if (!filtered.length) {
-    $('#wd-table-body').html('<tr><td colspan="7" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>');
+    $('#wd-table-body').html(`<tr><td colspan="${colspanWithBranch(7)}" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>`);
     return;
   }
   $('#wd-table-body').html(filtered.map(w => {
@@ -983,6 +1061,7 @@ function renderWithdrawalTable(data) {
       <td>${w.department || '-'}</td>
       <td class="text-center">${items.length} รายการ</td>
       <td>${Fmt.statusBadge(w.type === 'return' ? 'return' : w.status)}</td>
+      ${branchCell(w.branch_id)}
       <td>
         <button class="btn btn-sm btn-outline-primary me-1" title="ดูรายละเอียด" onclick="viewWithdrawal('${w.id}')"><i class="fas fa-eye"></i></button>
         ${w.status === 'pending' ? `<button class="btn btn-sm btn-outline-success me-1" onclick="changeWdStatus('${w.id}','completed')"><i class="fas fa-check"></i></button>` : ''}
@@ -1622,9 +1701,8 @@ async function saveEditedInvoice(payload) {
 }
 
 // ============================================================
-// SECTION: TRANSFER (โยกของข้ามโกดัง/สาขา)
+// SECTION: TRANSFER (โยกของข้ามโกดัง/สาขา) — รองรับหลายรายการต่อการโยก 1 ครั้ง
 // ============================================================
-let _tfSrcUnitCost = 0; // ต้นทุน/หน่วยต้นทางของสินค้าที่เลือก (สำหรับ preview)
 
 async function loadTransfer() {
   try {
@@ -1642,10 +1720,34 @@ async function loadTransfer() {
   }
 }
 
-function tfBranchName(id) {
+// แปลง branch_id → ชื่อสาขา (ใช้ App.branches ที่โหลดไว้)
+function branchName(id) {
+  if (!id) return '-';
   const b = (App.branches || []).find(x => String(x.id) === String(id));
-  return b ? (b.name || id) : (id || '-');
+  return b ? (b.name || id) : id;
 }
+
+// <td> คอลัมน์สาขาสำหรับตาราง (ซ่อนอัตโนมัติด้วย .col-branch ยกเว้น superadmin)
+function branchCell(id) {
+  return `<td class="col-branch"><span class="badge bg-light text-dark border fw-normal"><i class="fas fa-store-alt me-1 text-muted"></i>${branchName(id)}</span></td>`;
+}
+
+// จำนวนคอลัมน์ของ empty-state ให้ครอบคลุมคอลัมน์สาขาเมื่อ superadmin
+function colspanWithBranch(base) {
+  return Auth.isSuperAdmin() ? base + 1 : base;
+}
+
+// โหลดรายชื่อสาขา (เฉพาะ superadmin ที่ต้องใช้ map ชื่อสาขา) — admin/staff ไม่ต้องเรียก API เกิน
+async function ensureBranchesLoaded() {
+  if (App.branches && App.branches.length) return;
+  if (!Auth.isSuperAdmin()) return;
+  try { const b = await API.getBranches(); if (b.success) App.branches = b.data || []; } catch (_) {}
+}
+
+function tfBranchName(id) { return branchName(id); }
+
+let _tfGroups = {};     // key (batch_id|id) → array ของแถวในใบโยกเดียวกัน
+let _tfDetailKey = null; // key ที่กำลังเปิดดูรายละเอียด
 
 function renderTransferTable(data) {
   const rows = data || [];
@@ -1653,16 +1755,108 @@ function renderTransferTable(data) {
     $('#tf-table-body').html('<tr><td colspan="8" class="text-center text-muted py-5">ยังไม่มีรายการโยกของ</td></tr>');
     return;
   }
-  $('#tf-table-body').html(rows.map(r => `<tr>
-    <td>${r.id}</td>
-    <td>${Fmt.date(r.transfer_date || r.created_at)}</td>
+  // จัดกลุ่มแถวตาม batch_id (การโยกครั้งเดียว) — ข้อมูลเก่าไม่มี batch_id ใช้ id แทน
+  const groups = {};
+  const order  = [];
+  rows.forEach(r => {
+    const key = String(r.batch_id || r.id);
+    if (!groups[key]) { groups[key] = []; order.push(key); }
+    groups[key].push(r);
+  });
+  _tfGroups = groups;
+  order.sort((a, b) => String(groups[b][0].created_at || '').localeCompare(String(groups[a][0].created_at || '')));
+
+  $('#tf-table-body').html(order.map(key => {
+    const g           = groups[key];
+    const first       = g[0];
+    const isCancelled = String(first.status || 'completed') === 'cancelled';
+    const totalValue  = g.reduce((s, r) => s + (parseFloat(r.total_value) || 0), 0);
+    const extra       = g.reduce((s, r) => s + (parseFloat(r.transport_cost) || 0) + (parseFloat(r.labor_cost) || 0), 0);
+    return `<tr class="${isCancelled ? 'text-muted' : ''}">
+      <td>${Fmt.date(first.transfer_date || first.created_at)}</td>
+      <td><span class="text-muted">${tfBranchName(first.from_branch_id)}</span> <i class="fas fa-arrow-right mx-1 text-primary"></i> <strong>${tfBranchName(first.to_branch_id)}</strong></td>
+      <td class="text-center"><span class="badge bg-light text-dark border">${g.length} รายการ</span></td>
+      <td class="text-end fw-semibold">${Fmt.currency(totalValue)}</td>
+      <td class="text-end">${Fmt.currency(extra)}</td>
+      <td>${first.created_by || '-'}</td>
+      <td>${Fmt.statusBadge(isCancelled ? 'cancelled' : 'completed')}</td>
+      <td class="text-end">
+        <button class="btn btn-sm btn-outline-primary me-1" title="ดูรายละเอียด" onclick="viewTransferDetail('${key}')"><i class="fas fa-eye"></i></button>
+        ${isCancelled
+          ? `<button class="btn btn-sm btn-outline-secondary" title="ลบรายการ" onclick="cancelTransferConfirm('${key}', true)"><i class="fas fa-trash"></i></button>`
+          : `<button class="btn btn-sm btn-outline-danger" title="ยกเลิก + ลบรายการ" onclick="cancelTransferConfirm('${key}', false)"><i class="fas fa-ban"></i></button>`}
+      </td>
+    </tr>`;
+  }).join(''));
+}
+
+function viewTransferDetail(key) {
+  const g = _tfGroups[key];
+  if (!g || !g.length) return;
+  _tfDetailKey = key;
+  const first       = g[0];
+  const isCancelled = String(first.status || 'completed') === 'cancelled';
+  const totalValue  = g.reduce((s, r) => s + (parseFloat(r.total_value) || 0), 0);
+  const extra       = g.reduce((s, r) => s + (parseFloat(r.transport_cost) || 0) + (parseFloat(r.labor_cost) || 0), 0);
+
+  const itemsHtml = g.map(r => `<tr>
     <td>${r.product_name || r.product_id || '-'}${r.product_code ? ` <span class="text-muted small">(${r.product_code})</span>` : ''}</td>
     <td class="text-center">${Fmt.number(r.quantity)}</td>
-    <td><span class="text-muted">${tfBranchName(r.from_branch_id)}</span> <i class="fas fa-arrow-right mx-1 text-primary"></i> <strong>${tfBranchName(r.to_branch_id)}</strong></td>
+    <td class="text-end">${Fmt.currency(r.unit_cost)}</td>
     <td class="text-end">${Fmt.currency(r.dest_unit_cost)}</td>
-    <td class="text-end">${Fmt.currency((parseFloat(r.transport_cost) || 0) + (parseFloat(r.labor_cost) || 0))}</td>
-    <td>${r.created_by || '-'}</td>
-  </tr>`).join(''));
+    <td class="text-end">${Fmt.currency(r.total_value)}</td>
+  </tr>`).join('');
+
+  $('#tf-detail-body').html(`
+    <div class="row g-2 mb-3">
+      <div class="col-md-6"><small class="text-muted d-block">เส้นทาง</small><strong>${tfBranchName(first.from_branch_id)}</strong> <i class="fas fa-arrow-right mx-1 text-primary"></i> <strong>${tfBranchName(first.to_branch_id)}</strong></div>
+      <div class="col-md-3"><small class="text-muted d-block">วันที่</small>${Fmt.date(first.transfer_date || first.created_at)}</div>
+      <div class="col-md-3"><small class="text-muted d-block">สถานะ</small>${Fmt.statusBadge(isCancelled ? 'cancelled' : 'completed')}</div>
+      <div class="col-md-6"><small class="text-muted d-block">โดย</small>${first.created_by || '-'}</div>
+      <div class="col-md-6"><small class="text-muted d-block">หมายเหตุ</small>${first.notes || '-'}</div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead><tr><th>สินค้า</th><th class="text-center">จำนวน</th><th class="text-end">ต้นทุน/หน่วย (ต้นทาง)</th><th class="text-end">ต้นทุน/หน่วย (ปลายทาง)</th><th class="text-end">มูลค่า</th></tr></thead>
+        <tbody>${itemsHtml}</tbody>
+        <tfoot><tr class="fw-bold"><td colspan="4" class="text-end">รวม ${g.length} รายการ (ค่าขนส่ง+แรง ${Fmt.currency(extra)})</td><td class="text-end">${Fmt.currency(totalValue)}</td></tr></tfoot>
+      </table>
+    </div>`);
+
+  // ปุ่มในโมดอล: ใบที่ยกเลิกแล้ว (ข้อมูลเก่า) = ลบอย่างเดียว, ใบปกติ = ยกเลิก+ลบ
+  $('#tf-detail-cancel-btn')
+    .data('cancelled', isCancelled)
+    .html(isCancelled ? '<i class="fas fa-trash me-1"></i>ลบรายการนี้' : '<i class="fas fa-ban me-1"></i>ยกเลิก + ลบรายการ');
+  new bootstrap.Modal('#modalTransferDetail').show();
+}
+
+function cancelTransferFromDetail() {
+  if (_tfDetailKey) cancelTransferConfirm(_tfDetailKey, $('#tf-detail-cancel-btn').data('cancelled') === true);
+}
+
+function cancelTransferConfirm(key, deleteOnly) {
+  uiConfirm({
+    title:       deleteOnly ? 'ลบรายการโยก' : 'ยกเลิกการโยก',
+    message:     deleteOnly
+      ? 'ลบรายการโยกนี้ออกจากระบบใช่หรือไม่?'
+      : 'ระบบจะ<strong class="text-dark">คืนของกลับสาขาต้นทาง</strong> แล้วลบรายการนี้ออก<br><span class="small">(ต้องมีของคงเหลือพอที่สาขาปลายทาง)</span>',
+    okText:      deleteOnly ? 'ลบรายการ' : 'ยืนยันยกเลิก',
+    okClass:     'btn-danger',
+    icon:        deleteOnly ? 'fa-trash' : 'fa-ban',
+    iconClass:   'danger',
+    loadingText: deleteOnly ? 'กำลังลบรายการ...' : 'กำลังยกเลิกและคืนของ...',
+    onConfirm: async function() {
+      const res = await API.cancelTransfer({ batch_id: key });
+      if (!res || !res.success) throw new Error((res && res.message) || 'ยกเลิกไม่สำเร็จ');
+      return res;
+    }
+  }).then(function(res) {
+    if (!res) return; // ผู้ใช้กดยกเลิก
+    showToast(res.message || 'ดำเนินการสำเร็จ', 'success');
+    bootstrap.Modal.getOrCreateInstance('#modalTransferDetail').hide();
+    API.getStock().then(function(sr) { if (sr && sr.success) App.stock = sr.data || []; }); // สต็อกเปลี่ยน → ดึงใหม่
+    loadTransfer();
+  });
 }
 
 function rebuildTransferToSelect() {
@@ -1677,25 +1871,87 @@ function rebuildTransferToSelect() {
   if (prev && String(prev) !== String(from)) $('#tf-to').val(prev);
 }
 
-function rebuildTransferProductSelect() {
+// product_id ที่ถูกเลือกไว้แล้วในแถวอื่น (ยกเว้น select ที่ส่งมา) — ใช้ตัดออกจากตัวเลือก กันเลือกซ้ำ
+function tfSelectedIds(exceptEl) {
+  const ids = [];
+  $('#tf-items-container .tf-product-select').each(function () {
+    if (exceptEl && this === exceptEl) return;
+    const v = $(this).val();
+    if (v) ids.push(String(v));
+  });
+  return ids;
+}
+
+// สร้าง <option> รายการสินค้าจากสต็อกของสาขาต้นทาง (qty > 0)
+// excludeIds = สินค้าที่เลือกในแถวอื่นแล้ว (ตัดออก), keepId = สินค้าที่แถวนี้เลือกอยู่ (คงไว้เสมอ)
+function tfProductOptions(fromBranch, excludeIds, keepId) {
+  excludeIds = excludeIds || [];
+  keepId = String(keepId || '');
+  if (!fromBranch) return '<option value="">-- เลือกสาขาต้นทางก่อน --</option>';
+  const all = (App.stock || []).filter(s => String(s.branch_id || '') === String(fromBranch) && (parseFloat(s.quantity) || 0) > 0);
+  if (!all.length) return '<option value="">-- สาขานี้ไม่มีสินค้าคงเหลือ --</option>';
+  const list = all.filter(s => String(s.product_id) === keepId || excludeIds.indexOf(String(s.product_id)) === -1);
+  let opts = '<option value="">-- เลือกสินค้า --</option>';
+  list.forEach(s => {
+    const nm = String(s.product_name || s.product_id || '').replace(/"/g, '&quot;');
+    opts += `<option value="${s.product_id}" data-qty="${parseFloat(s.quantity) || 0}" data-unit="${s.unit || ''}" data-name="${nm}" data-cost="${parseFloat(s.cost_price) || 0}">${s.product_name || s.product_id} (คงเหลือ ${Fmt.number(s.quantity)} ${s.unit || ''})</option>`;
+  });
+  return opts;
+}
+
+// สร้างตัวเลือกของทุกแถวใหม่ โดยตัดสินค้าที่เลือกในแถวอื่นออก (คงค่าที่แต่ละแถวเลือกไว้)
+function refreshTransferProductSelects() {
   const from = $('#tf-from').val();
-  let opts;
-  if (!from) {
-    opts = '<option value="">-- เลือกสาขาต้นทางก่อน --</option>';
+  $('#tf-items-container .tf-product-select').each(function () {
+    const cur = String($(this).val() || '');
+    $(this).html(tfProductOptions(from, tfSelectedIds(this), cur)).val(cur);
+  });
+}
+
+// เพิ่มแถวสินค้า 1 รายการในโมดอลโยก
+function addTransferItem() {
+  const rid  = 'tfi-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+  const from = $('#tf-from').val();
+  const html = `<div class="item-row" id="${rid}">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-6">
+        <label class="form-label small mb-1">สินค้า</label>
+        <select class="form-select form-select-sm tf-product-select" onchange="onTfItemChange(this)">${tfProductOptions(from)}</select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-1">คงเหลือต้นทาง</label>
+        <input type="text" class="form-control form-control-sm tf-item-avail bg-light" readonly value="-">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-1">จำนวนที่ย้าย</label>
+        <input type="number" class="form-control form-control-sm tf-item-qty" min="0" step="any" value="0" oninput="calcTransferPreview()">
+      </div>
+      <div class="col-md-1 text-end">
+        <button type="button" class="btn btn-sm btn-outline-danger" title="ลบรายการ" onclick="removeTransferItem('${rid}')"><i class="fas fa-trash"></i></button>
+      </div>
+    </div>
+  </div>`;
+  $('#tf-items-container').append(html);
+  refreshTransferProductSelects(); // แถวใหม่ตัดสินค้าที่เลือกไปแล้วออก
+}
+
+function removeTransferItem(rid) {
+  $('#' + rid).remove();
+  if (!$('#tf-items-container .item-row').length) addTransferItem(); // เหลืออย่างน้อย 1 แถว
+  refreshTransferProductSelects(); // สินค้าของแถวที่ลบกลับมาเลือกได้
+  calcTransferPreview();
+}
+
+function onTfItemChange(sel) {
+  const $row = $(sel).closest('.item-row');
+  const opt  = $(sel).find('option:selected');
+  if ($(sel).val()) {
+    $row.find('.tf-item-avail').val(`${Fmt.number(opt.data('qty') || 0)} ${opt.data('unit') || ''}`);
   } else {
-    const list = (App.stock || []).filter(s => String(s.branch_id || '') === String(from) && (parseFloat(s.quantity) || 0) > 0);
-    if (!list.length) {
-      opts = '<option value="">-- สาขานี้ไม่มีสินค้าคงเหลือ --</option>';
-    } else {
-      opts = '<option value="">-- เลือกสินค้า --</option>';
-      list.forEach(s => {
-        const nm = String(s.product_name || s.product_id || '').replace(/"/g, '&quot;');
-        opts += `<option value="${s.product_id}" data-qty="${parseFloat(s.quantity) || 0}" data-unit="${s.unit || ''}" data-name="${nm}" data-cost="${parseFloat(s.cost_price) || 0}">${s.product_name || s.product_id} (คงเหลือ ${Fmt.number(s.quantity)} ${s.unit || ''})</option>`;
-      });
-    }
+    $row.find('.tf-item-avail').val('-');
   }
-  $('#tf-product').html(opts);
-  $('#tf-avail').html('&nbsp;');
+  refreshTransferProductSelects(); // ซ่อนสินค้าที่เพิ่งเลือกจากแถวอื่น / คืนสินค้าที่ยกเลิก
+  calcTransferPreview();
 }
 
 function openTransferModal() {
@@ -1707,7 +1963,6 @@ function openTransferModal() {
   $('#tf-form')[0].reset();
   $('#tf-date').val(new Date().toISOString().split('T')[0]);
   $('#tf-dest-cost').text('฿0.00');
-  _tfSrcUnitCost = 0;
 
   const isSuper  = Auth.isSuperAdmin();
   const myBranch = Auth.getBranchId();
@@ -1723,7 +1978,8 @@ function openTransferModal() {
   else $('#tf-from').prop('disabled', false);
 
   rebuildTransferToSelect();
-  rebuildTransferProductSelect();
+  $('#tf-items-container').empty();
+  addTransferItem();               // เริ่มต้น 1 แถว
   calcTransferPreview();
 
   new bootstrap.Modal('#modalTransfer').show();
@@ -1731,50 +1987,67 @@ function openTransferModal() {
 
 function onTransferFromChange() {
   rebuildTransferToSelect();
-  rebuildTransferProductSelect();
-  _tfSrcUnitCost = 0;
+  // เปลี่ยนสาขาต้นทาง → ล้างสินค้าที่เลือกไว้ทุกแถว แล้วสร้างตัวเลือกใหม่
+  $('#tf-items-container .tf-product-select').val('');
+  $('#tf-items-container .tf-item-avail').val('-');
+  refreshTransferProductSelects();
   calcTransferPreview();
 }
 
-function onTransferProductChange() {
-  const opt = $('#tf-product option:selected');
-  if ($('#tf-product').val()) {
-    $('#tf-avail').text(`คงเหลือต้นทาง: ${Fmt.number(opt.data('qty') || 0)} ${opt.data('unit') || ''}`);
-    _tfSrcUnitCost = parseFloat(opt.data('cost')) || 0;
-  } else {
-    $('#tf-avail').html('&nbsp;');
-    _tfSrcUnitCost = 0;
-  }
-  calcTransferPreview();
-}
-
+// รวมทุกแถว → สรุปต้นทุน (โดยประมาณ ใช้ weighted-avg; ค่าจริงคำนวณ FIFO ฝั่ง server)
 function calcTransferPreview() {
-  const qty       = parseFloat($('#tf-qty').val()) || 0;
   const transport = parseFloat($('#tf-transport').val()) || 0;
   const labor     = parseFloat($('#tf-labor').val()) || 0;
-  const destUnit  = qty > 0 ? (_tfSrcUnitCost * qty + transport + labor) / qty : 0;
-  $('#tf-dest-cost').text(Fmt.currency(destUnit));
+  let costSum = 0;
+  $('#tf-items-container .item-row').each(function () {
+    const $r  = $(this);
+    const opt = $r.find('.tf-product-select option:selected');
+    if (!$r.find('.tf-product-select').val()) return;
+    const qty = parseFloat($r.find('.tf-item-qty').val()) || 0;
+    if (qty <= 0) return;
+    costSum += qty * (parseFloat(opt.data('cost')) || 0);
+  });
+  const extra = transport + labor;
+  $('#tf-sum-goods').text(Fmt.currency(costSum));
+  $('#tf-sum-extra').text(Fmt.currency(extra));
+  $('#tf-dest-cost').text(Fmt.currency(costSum + extra));
 }
 
 async function saveTransfer() {
-  const productId  = $('#tf-product').val();
   const fromBranch = $('#tf-from').val();
   const toBranch   = $('#tf-to').val();
-  const qty        = parseFloat($('#tf-qty').val()) || 0;
-  const opt        = $('#tf-product option:selected');
-  const avail      = parseFloat(opt.data('qty')) || 0;
 
-  if (!fromBranch)                           { showToast('กรุณาเลือกสาขาต้นทาง', 'warning'); return; }
-  if (!toBranch)                             { showToast('กรุณาเลือกสาขาปลายทาง', 'warning'); return; }
+  if (!fromBranch)                             { showToast('กรุณาเลือกสาขาต้นทาง', 'warning'); return; }
+  if (!toBranch)                               { showToast('กรุณาเลือกสาขาปลายทาง', 'warning'); return; }
   if (String(fromBranch) === String(toBranch)) { showToast('สาขาต้นทางและปลายทางต้องไม่เหมือนกัน', 'warning'); return; }
-  if (!productId)                            { showToast('กรุณาเลือกสินค้าที่จะย้าย', 'warning'); return; }
-  if (qty <= 0)                              { showToast('กรุณาระบุจำนวนที่ย้าย', 'warning'); return; }
-  if (qty > avail)                           { showToast(`จำนวนเกินสต็อกคงเหลือ (มี ${Fmt.number(avail)})`, 'warning'); return; }
+
+  // เก็บรายการสินค้าจากทุกแถว + validate
+  const items = [];
+  let valid = true;
+  $('#tf-items-container .item-row').each(function () {
+    if (!valid) return;
+    const $r    = $(this);
+    const sel   = $r.find('.tf-product-select');
+    const opt   = sel.find('option:selected');
+    const pid   = sel.val();
+    const qty   = parseFloat($r.find('.tf-item-qty').val()) || 0;
+    if (!pid && qty <= 0) return; // แถวว่าง — ข้าม
+    if (!pid)            { showToast('กรุณาเลือกสินค้าให้ครบทุกแถว หรือลบแถวที่ว่าง', 'warning'); valid = false; return; }
+    const name  = opt.data('name') || '';
+    const avail = parseFloat(opt.data('qty')) || 0;
+    if (qty <= 0)        { showToast(`กรุณาระบุจำนวนของ "${name}"`, 'warning'); valid = false; return; }
+    if (qty > avail)     { showToast(`"${name}": จำนวนเกินสต็อกคงเหลือ (มี ${Fmt.number(avail)})`, 'warning'); valid = false; return; }
+    items.push({ product_id: pid, product_name: name, quantity: qty });
+  });
+  if (!valid) return;
+  if (!items.length) { showToast('กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ', 'warning'); return; }
+
+  // กันเลือกสินค้าซ้ำกันหลายแถว
+  const pids = items.map(i => i.product_id);
+  if (new Set(pids).size !== pids.length) { showToast('มีสินค้าซ้ำกันหลายแถว กรุณารวมเป็นแถวเดียว', 'warning'); return; }
 
   const payload = {
-    product_id:     productId,
-    product_name:   opt.data('name') || '',
-    quantity:       qty,
+    items,
     from_branch_id: fromBranch,
     to_branch_id:   toBranch,
     transport_cost: parseFloat($('#tf-transport').val()) || 0,
@@ -1788,7 +2061,7 @@ async function saveTransfer() {
   try {
     const res = await API.addTransfer(payload);
     if (res.success) {
-      showToast('โยกของสำเร็จ!', 'success');
+      showToast(res.message || 'โยกของสำเร็จ!', 'success');
       bootstrap.Modal.getOrCreateInstance('#modalTransfer').hide();
       const sr = await API.getStock(); if (sr.success) App.stock = sr.data || []; // สต็อกเปลี่ยน → ดึงใหม่
       loadTransfer();
@@ -1802,7 +2075,7 @@ async function saveTransfer() {
 // ============================================================
 async function loadRecipients() {
   try {
-    const res = await API.getRecipients();
+    const [res] = await Promise.all([API.getRecipients(), ensureBranchesLoaded()]);
     if (!res.success) throw new Error(res.message);
     App.recipients = res.data || [];
     renderRecipientsTable(App.recipients);
@@ -1812,7 +2085,7 @@ async function loadRecipients() {
 
 function renderRecipientsTable(data) {
   if (!data.length) {
-    $('#recipients-table-body').html('<tr><td colspan="6" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>');
+    $('#recipients-table-body').html(`<tr><td colspan="${colspanWithBranch(6)}" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>`);
     return;
   }
   $('#recipients-table-body').html(data.map(r => `<tr>
@@ -1821,6 +2094,7 @@ function renderRecipientsTable(data) {
     <td>${r.position || '-'}</td>
     <td>${r.phone || '-'}</td>
     <td>${r.email || '-'}</td>
+    ${branchCell(r.branch_id)}
     <td>
       <button class="btn btn-sm btn-outline-primary me-1" onclick="openEditRecipient('${r.id}')"><i class="fas fa-edit"></i></button>
       <button class="btn btn-sm btn-outline-danger" onclick="deleteRecipient('${r.id}')"><i class="fas fa-trash"></i></button>
@@ -2079,7 +2353,8 @@ async function loadExpenses() {
   try {
     const [expRes, catRes] = await Promise.all([
       API.getExpenses(month, year),
-      App._expenseCategories ? Promise.resolve({ success: true, data: App._expenseCategories }) : API.getExpenseCategories()
+      App._expenseCategories ? Promise.resolve({ success: true, data: App._expenseCategories }) : API.getExpenseCategories(),
+      ensureBranchesLoaded()
     ]);
     if (!expRes.success) throw new Error(expRes.message);
     App._expenses = expRes.data || [];
@@ -2107,7 +2382,7 @@ function populateExpenseCategorySelect(categories) {
 
 function renderExpensesTable(data) {
   if (!data.length) {
-    $('#expenses-table-body').html('<tr><td colspan="6" class="text-center text-muted py-4">ไม่พบรายการค่าใช้จ่ายในเดือนนี้</td></tr>');
+    $('#expenses-table-body').html(`<tr><td colspan="${colspanWithBranch(6)}" class="text-center text-muted py-4">ไม่พบรายการค่าใช้จ่ายในเดือนนี้</td></tr>`);
     $('#exp-total').text('฿0.00');
     return;
   }
@@ -2118,6 +2393,7 @@ function renderExpensesTable(data) {
     <td>${r.description || '-'}</td>
     <td class="text-end fw-semibold">${Fmt.currency(r.amount)}</td>
     <td class="text-muted small">${r.created_by || '-'}</td>
+    ${branchCell(r.branch_id)}
     <td>
       <button class="btn btn-sm btn-outline-primary me-1" onclick="openEditExpense('${r.id}')"><i class="fas fa-edit"></i></button>
       <button class="btn btn-sm btn-outline-danger" onclick="deleteExpenseConfirm('${r.id}')"><i class="fas fa-trash"></i></button>
@@ -2191,7 +2467,7 @@ async function deleteExpenseConfirm(id) {
 // ============================================================
 async function loadProducts() {
   try {
-    const res = await API.getProducts();
+    const [res] = await Promise.all([API.getProducts(), ensureBranchesLoaded()]);
     if (!res.success) throw new Error(res.message);
     App.products = res.data || [];
     renderProductsTable(App.products);
@@ -2201,7 +2477,7 @@ async function loadProducts() {
 
 function renderProductsTable(data) {
   if (!data.length) {
-    $('#products-table-body').html('<tr><td colspan="8" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>');
+    $('#products-table-body').html(`<tr><td colspan="${colspanWithBranch(8)}" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>`);
     return;
   }
   $('#products-table-body').html(data.map(p => `<tr>
@@ -2212,6 +2488,7 @@ function renderProductsTable(data) {
     <td class="text-end">${Fmt.currency(p.cost_price)}</td>
     <td class="text-end">${Fmt.currency(p.selling_price)}</td>
     <td class="text-center">${p.min_stock}</td>
+    ${branchCell(p.branch_id)}
     <td>
       <button class="btn btn-sm btn-outline-primary me-1" onclick="openEditProduct('${p.id}')"><i class="fas fa-edit"></i></button>
       <button class="btn btn-sm btn-outline-danger" onclick="deleteProductConfirm('${p.id}')"><i class="fas fa-trash"></i></button>

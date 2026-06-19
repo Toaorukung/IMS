@@ -428,6 +428,10 @@ body {
 .table tbody tr { transition: background .12s; }
 .table tbody tr:hover { background: #f0f7ff; }
 
+/* คอลัมน์ "สาขา" — แสดงเฉพาะ superadmin ที่เห็นข้อมูลข้ามสาขา (admin/staff ล็อกสาขาเดียว ไม่ต้องโชว์) */
+.col-branch { display: none; }
+body.is-superadmin .col-branch { display: table-cell; }
+
 /* --- Buttons --- */
 .btn { font-family: 'Sarabun', sans-serif; font-weight: 600; border-radius: 9px; letter-spacing: .2px; transition: all .18s; }
 .btn-primary  { background: var(--primary); border-color: var(--primary); box-shadow: 0 2px 8px rgba(26,86,219,.25); }
@@ -633,6 +637,29 @@ textarea.form-control { resize: vertical; min-height: 72px; line-height: 1.6; }
 }
 .cost-row.total span:last-child { color: var(--primary); font-size: 1.1rem; }
 
+/* --- Modal section sub-heading (หัวข้อย่อยในโมดอล) --- */
+.modal-subhead {
+  display: flex; align-items: center; gap: 10px;
+  font-size: .74rem; font-weight: 700; letter-spacing: .6px;
+  text-transform: uppercase; color: #64748b;
+  margin: 4px 0 12px;
+}
+.modal-subhead::after { content: ''; flex: 1; height: 1px; background: #e8edf2; }
+.modal-subhead i { color: var(--primary); }
+
+/* --- Transfer route (ต้นทาง → ปลายทาง) --- */
+.tf-route {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px 20px;
+}
+.tf-route-arrow {
+  width: 38px; height: 38px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(26,86,219,.1); color: var(--primary);
+}
+
 /* --- Modal footer buttons --- */
 .modal-footer .btn-secondary {
   background: #fff; border: 1.5px solid #d1d5db; color: #374151;
@@ -662,6 +689,31 @@ textarea.form-control { resize: vertical; min-height: 72px; line-height: 1.6; }
 .toast-item.info    { background: var(--primary); }
 @keyframes slideIn  { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(110%); opacity: 0; } }
+
+/* --- Confirm dialog (แทน window.confirm) --- */
+.modal-confirm { max-width: 400px; }
+#modalConfirm .modal-content { border-radius: 18px; overflow: hidden; position: relative; border: none; }
+.confirm-icon {
+  width: 66px; height: 66px; border-radius: 50%; margin: 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1.8rem;
+  animation: confirmPop .34s cubic-bezier(.2,.85,.4,1.3) both;
+}
+.confirm-icon.warn   { background: #fff7ed; color: #f59e0b; }
+.confirm-icon.danger { background: #fef2f2; color: #ef4444; }
+.confirm-icon.info   { background: #eff6ff; color: #3b82f6; }
+.confirm-title { font-weight: 800; color: var(--text-primary); }
+.confirm-msg   { font-size: .92rem; line-height: 1.6; }
+.confirm-overlay {
+  position: absolute; inset: 0; z-index: 5;
+  background: rgba(255,255,255,.94); backdrop-filter: blur(2px);
+  display: none; flex-direction: column; align-items: center; justify-content: center;
+}
+.confirm-overlay.show { display: flex; animation: fadeIn .15s ease both; }
+.confirm-overlay .spinner-border { width: 2.6rem; height: 2.6rem; color: var(--primary); border-width: .28em; }
+.confirm-overlay-text { font-weight: 700; color: #475569; letter-spacing: .3px; }
+@keyframes confirmPop { 0% { transform: scale(.3); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes fadeIn     { from { opacity: 0; } to { opacity: 1; } }
 
 /* --- Loading --- */
 .loading-overlay {
