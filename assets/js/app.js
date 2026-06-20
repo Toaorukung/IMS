@@ -99,6 +99,7 @@ $(document).ready(async function () {
     case 'receive':    loadReceive();    break;
     case 'stock':         loadStock();              break;
     case 'stock-imports': loadStockImportHistory(); break;
+    case 'bestsellers':   loadBestSellers();        break;
     case 'withdrawal': loadWithdrawal(); if (urlParams.get('new') === '1') setTimeout(openWithdrawalModal, 600); break;
     case 'withdrawal-items': loadWithdrawalItems(); break;
     case 'transfer':   loadTransfer();   if (urlParams.get('new') === '1') setTimeout(openTransferModal, 600); break;
@@ -1172,6 +1173,123 @@ async function saveExtraCost() {
   }
 }
 
+// ============================================================
+// สินค้าขายดี (Best Sellers) — ใช้ข้อมูลบิลขาย (Withdrawals)
+// ============================================================
+let _bsMode = 'day';
+
+function _bsYmd(d) {
+  const dt = new Date(d);
+  if (isNaN(dt)) return '';
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+async function loadBestSellers() {
+  // ตั้งค่าเริ่มต้น = วันนี้ / เดือนนี้ / ปีนี้
+  const today = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  $('#bs-date').val(`${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`);
+  $('#bs-month').val(`${today.getFullYear()}-${pad(today.getMonth() + 1)}`);
+  $('#bs-year').val(today.getFullYear());
+
+  // สลับโหมดช่วงเวลา
+  $('#bs-mode-group button').on('click', function () {
+    _bsMode = $(this).data('mode');
+    $('#bs-mode-group button').removeClass('active');
+    $(this).addClass('active');
+    $('#bs-input-day').toggle(_bsMode === 'day');
+    $('#bs-input-month').toggle(_bsMode === 'month');
+    $('#bs-input-year').toggle(_bsMode === 'year');
+    renderBestSellers();
+  });
+  $('#bs-date, #bs-month, #bs-year').on('change', renderBestSellers);
+
+  $('#bs-grid').html(`<div class="text-center text-muted py-5 w-100"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</div>`);
+  try {
+    const [wRes, pRes] = await Promise.all([API.getWithdrawals(), API.getProducts()]);
+    App.withdrawals = (wRes && wRes.success) ? (wRes.data || []) : [];
+    App.products    = (pRes && pRes.success) ? (pRes.data || []) : [];
+  } catch (e) {
+    showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger');
+  }
+  renderBestSellers();
+}
+
+function renderBestSellers() {
+  // map product_id → code/ชื่อ/ราคาขาย (ไว้รวมสินค้าเดียวกันข้ามสาขาด้วย code|ชื่อ และคิดมูลค่าขาย)
+  const pmap = {};
+  (App.products || []).forEach(p => {
+    pmap[String(p.id)] = { code: String(p.code || '').trim(), name: p.name, selling: parseFloat(p.selling_price || 0) };
+  });
+
+  // ตัวกรองช่วงเวลาตามโหมด
+  let matchPeriod;
+  if (_bsMode === 'day') {
+    const v = $('#bs-date').val();
+    matchPeriod = d => v && _bsYmd(d) === v;
+  } else if (_bsMode === 'month') {
+    const v = $('#bs-month').val(); // YYYY-MM
+    matchPeriod = d => !!v && _bsYmd(d).slice(0, 7) === v;
+  } else {
+    const v = parseInt($('#bs-year').val());
+    matchPeriod = d => !!v && new Date(d).getFullYear() === v;
+  }
+
+  const agg = {};
+  let totalQty = 0, totalVal = 0;
+  (App.withdrawals || []).forEach(w => {
+    if (w.type === 'return') return;                                            // ข้ามรายการคืน
+    if (w.status !== 'completed' && w.status !== 'partial_returned') return;    // นับเฉพาะที่จ่ายออกแล้ว
+    if (!matchPeriod(w.withdrawal_date || w.created_at)) return;
+    (Array.isArray(w.items) ? w.items : []).forEach(it => {
+      const qty = parseFloat(it.quantity || 0);
+      if (qty <= 0) return;
+      const pm   = pmap[String(it.product_id)] || {};
+      const code = pm.code || '';
+      const name = it.product_name || pm.name || it.product_id;
+      const key  = (code ? code.toLowerCase() : '') || String(name).trim().toLowerCase();
+      const selling = pm.selling || parseFloat(it.unit_price || 0);
+      const value   = selling * qty;
+      if (!agg[key]) agg[key] = { name, code, qty: 0, value: 0, orders: 0 };
+      agg[key].qty    += qty;
+      agg[key].value  += value;
+      agg[key].orders += 1;
+      totalQty += qty;
+      totalVal += value;
+    });
+  });
+
+  const rows = Object.values(agg).sort((a, b) => b.qty - a.qty || b.value - a.value);
+
+  if (!rows.length) {
+    $('#bs-stats').hide();
+    $('#bs-grid').html(`<div class="text-center text-muted py-5 w-100"><i class="fas fa-trophy fa-3x mb-3 opacity-25 d-block"></i>${t('bs_no_data')}</div>`);
+    return;
+  }
+
+  $('#bs-stat-products').text(Fmt.number(rows.length));
+  $('#bs-stat-qty').text(Fmt.number(totalQty));
+  $('#bs-stat-value').text(Fmt.currency(totalVal));
+  $('#bs-stats').show();
+
+  const maxQty = rows[0].qty || 1;
+  const medals = ['🥇', '🥈', '🥉'];
+  $('#bs-grid').html(rows.map((r, i) => {
+    const rank    = i + 1;
+    const rankCls = rank <= 3 ? `rank-${rank}` : '';
+    const medal   = rank <= 3 ? `<span class="bs-medal">${medals[rank - 1]}</span>` : '';
+    const pct     = Math.max(5, Math.round(r.qty / maxQty * 100));
+    return `<div class="bs-card ${rankCls}">
+      <div class="bs-rank">#${rank}</div>
+      <div class="bs-name">${medal}${r.name}</div>
+      <div class="bs-code">${r.code || '&nbsp;'}</div>
+      <div class="bs-qty">${Fmt.number(r.qty)} <small>${t('bs_unit_sold')}</small></div>
+      <div class="bs-bar"><span style="width:${pct}%"></span></div>
+      <div class="bs-value"><i class="fas fa-wallet me-1"></i>${Fmt.currency(r.value)}</div>
+    </div>`;
+  }).join(''));
+}
+
 $('#stock-search').on('input', function () { applyStockView(); });
 
 // เปลี่ยนสาขา/มุมมองภาพรวม → re-render ตาราง + stats
@@ -1181,7 +1299,7 @@ $(document).on('change', '#stock-branch-filter', function () {
 });
 
 // ============================================================
-// SECTION: WITHDRAWAL (เบิกสินค้า)
+// SECTION: WITHDRAWAL (ขายสินค้า)
 // ============================================================
 let wdFilter = 'all';
 async function loadWithdrawal() {
@@ -1238,7 +1356,7 @@ $(document).on('click', '.wd-filter', function () {
 });
 
 // ============================================================
-// SECTION: WITHDRAWAL ITEMS (สรุปการเบิกรายสินค้า — รายวัน/เดือน/ปี)
+// SECTION: WITHDRAWAL ITEMS (สรุปการขายรายสินค้า — รายวัน/เดือน/ปี)
 // ============================================================
 const wdiState = { mode: 'day', branch: '__all__' };
 
@@ -1324,7 +1442,7 @@ function wdiPeriodLabel() {
 }
 
 function renderWithdrawalItems() {
-  // รวมเฉพาะใบเบิกที่ของออกจริง: type=normal + completed/partial_returned
+  // รวมเฉพาะบิลขายที่ของออกจริง: type=normal + completed/partial_returned
   // (items ของ partial_returned ถูกหักจำนวนที่คืนแล้วใน partialReturn → เป็นยอดออกสุทธิ)
   const branch = Auth.isSuperAdmin() ? ($('#wdi-branch').val() || '__all__') : '__all__';
   wdiState.branch = branch;
@@ -1367,7 +1485,7 @@ function renderWithdrawalItems() {
   $('#wdi-period-label').text(wdiPeriodLabel());
 
   if (!list.length) {
-    $('#wdi-table-body').html('<tr><td colspan="7" class="text-center text-muted py-4">ไม่มีการเบิกออกในช่วงที่เลือก</td></tr>');
+    $('#wdi-table-body').html('<tr><td colspan="7" class="text-center text-muted py-4">ไม่มีการขายในช่วงที่เลือก</td></tr>');
     return;
   }
   $('#wdi-table-body').html(list.map(function (r, i) {
@@ -1421,7 +1539,7 @@ async function openWithdrawalModal() {
   populateRecipientSelects();
 }
 
-// เติม dropdown สาขาในโมดอลเบิก — superadmin เลือกได้ทุกสาขา / admin+staff ล็อกที่สาขาตัวเอง
+// เติม dropdown สาขาในโมดอลขาย — superadmin เลือกได้ทุกสาขา / admin+staff ล็อกที่สาขาตัวเอง
 function populateWdBranchSelect() {
   const isSuper  = Auth.isSuperAdmin();
   const myBranch = Auth.getBranchId();
@@ -1436,7 +1554,7 @@ function populateWdBranchSelect() {
   $('#wd-branch').prop('disabled', !isSuper && !!myBranch);
 }
 
-// สินค้าเฉพาะสาขาที่เลือกในโมดอลเบิก (กัน superadmin เลือกสินค้าผิดสาขาแล้วตัดสต็อกไม่ตรง lot)
+// สินค้าเฉพาะสาขาที่เลือกในโมดอลขาย (กัน superadmin เลือกสินค้าผิดสาขาแล้วตัดสต็อกไม่ตรง lot)
 function wdBranchProducts() {
   const bid = $('#wd-branch').val();
   if (!bid) return [];
@@ -1469,7 +1587,7 @@ function addWdItem() {
         <input type="text" class="form-control form-control-sm wd-avail bg-light" readonly value="-">
       </div>
       <div class="col-md-2">
-        <label class="form-label small mb-1">จำนวนเบิก</label>
+        <label class="form-label small mb-1">จำนวนขาย</label>
         <input type="number" class="form-control form-control-sm wd-qty" value="1" min="1" oninput="calcWdTotal()">
       </div>
       <div class="col-md-2">
@@ -1518,7 +1636,7 @@ async function saveWithdrawal() {
   const type          = $('#wd-type').val();
   const branchId      = $('#wd-branch').val();
 
-  if (!branchId) { showToast('กรุณาเลือกสาขาที่เบิกสินค้า', 'warning'); return; }
+  if (!branchId) { showToast('กรุณาเลือกสาขาที่ขายสินค้า', 'warning'); return; }
   if (!recipientId || !wdDate) { showToast('กรุณากรอกข้อมูลให้ครบ', 'warning'); return; }
 
   const items = [];
@@ -1551,7 +1669,7 @@ async function saveWithdrawal() {
   try {
     const res = await API.addWithdrawal(payload);
     if (res.success) {
-      showToast('บันทึกใบเบิกสำเร็จ!', 'success');
+      showToast('บันทึกบิลขายสำเร็จ!', 'success');
       bootstrap.Modal.getOrCreateInstance('#modalWithdrawal').hide();
       loadWithdrawal();
       const sr = await API.getStock(); if (sr.success) App.stock = sr.data || [];
@@ -1561,7 +1679,7 @@ async function saveWithdrawal() {
 }
 
 async function changeWdStatus(id, status) {
-  const label = status === 'completed' ? 'ยืนยันเบิกสำเร็จ' : 'ยืนยันคืนสินค้า';
+  const label = status === 'completed' ? 'ยืนยันการขายสำเร็จ' : 'ยืนยันคืนสินค้า';
   confirmAction(`${label}? สต็อคจะถูกอัพเดทโดยอัตโนมัติ`, async () => {
     try {
       const res = await API.updateWithdrawalStatus(id, status);
@@ -1593,7 +1711,7 @@ function openReturnModal(id) {
         </div>
         <div class="col">
           <label class="fw-semibold d-block" for="ret-chk-${idx}">${item.product_name || item.product_id}</label>
-          <span class="text-muted small">เบิกไปทั้งหมด <strong>${item.quantity}</strong> ${item.unit || 'ชิ้น'}</span>
+          <span class="text-muted small">ขายไปทั้งหมด <strong>${item.quantity}</strong> ${item.unit || 'ชิ้น'}</span>
         </div>
         <div class="col-md-3">
           <label class="form-label small mb-1">จำนวนที่คืน</label>
@@ -2007,7 +2125,7 @@ function printReceipt(w) {
 // payload: { id, recipient_id, recipient_name, cust_address, cust_tax, doc_no, withdrawal_date, deposit, items[] }
 async function saveEditedInvoice(payload) {
   try {
-    // 1) อัพเดทใบเบิก — recipient_name / วันที่ / เลขที่เอกสาร / เงินมัดจำ / รายการ (total_value คำนวณฝั่ง server)
+    // 1) อัพเดทบิลขาย — recipient_name / วันที่ / เลขที่เอกสาร / เงินมัดจำ / รายการ (total_value คำนวณฝั่ง server)
     const wRes = await API.updateWithdrawal({
       id:              payload.id,
       recipient_name:  payload.recipient_name,
@@ -2016,7 +2134,7 @@ async function saveEditedInvoice(payload) {
       deposit:         payload.deposit,
       items:           payload.items
     });
-    if (!wRes || !wRes.success) return { success: false, message: (wRes && wRes.message) || 'อัพเดทใบเบิกไม่สำเร็จ' };
+    if (!wRes || !wRes.success) return { success: false, message: (wRes && wRes.message) || 'อัพเดทบิลขายไม่สำเร็จ' };
 
     // 2) ที่อยู่ / เลขภาษี / ชื่อ ลูกค้า → เก็บที่ระเบียนผู้รับ (เฉพาะเมื่อมี recipient_id)
     //    ไม่ critical — ถ้าสิทธิ์ไม่พอ (staff) บิลก็บันทึกแล้ว จึงห่อด้วย try/catch
@@ -2544,7 +2662,7 @@ async function generateReport() {
       const items = Array.isArray(w.items) ? w.items : [];
       items.forEach(item => {
         const qty      = parseFloat(item.quantity || 0);
-        const cost     = parseFloat(item.unit_price || 0);   // ต้นทุนที่บันทึกตอนเบิก
+        const cost     = parseFloat(item.unit_price || 0);   // ต้นทุนที่บันทึกตอนขาย
         const selling  = (priceMap[item.product_id] || {}).selling || cost;
         const name     = item.product_name || (priceMap[item.product_id] || {}).name || item.product_id;
         const revenue  = selling * qty;
@@ -2600,7 +2718,7 @@ async function generateReport() {
         <td class="text-end ${profitColor}">${margin.toFixed(1)}%</td>
       </tr>`);
     } else {
-      $('#rpt-profit-body').html('<tr><td colspan="8" class="text-center text-muted">ไม่มีข้อมูลการเบิกในเดือนนี้</td></tr>');
+      $('#rpt-profit-body').html('<tr><td colspan="8" class="text-center text-muted">ไม่มีข้อมูลการขายในเดือนนี้</td></tr>');
     }
 
     // Import table
@@ -2663,7 +2781,7 @@ function exportToExcel() {
   d.imports.forEach(r => {
     csv += `${r.id},${Fmt.date(r.order_date)},${r.supplier || ''},${r.yuan_amount},${r.exchange_rate},${r.base_cost_thb},${r.freight_cost},${r.additional_costs},${r.total_cost},${statusLabel(r.status)}\n`;
   });
-  csv += `\n=== รายการเบิกสินค้า ===\n`;
+  csv += `\n=== รายการขายสินค้า ===\n`;
   csv += `รหัส,วันที่,ผู้รับ,แผนก,มูลค่ารวม,สถานะ\n`;
   d.withdrawals.forEach(w => {
     csv += `${w.id},${Fmt.date(w.withdrawal_date || w.created_at)},${w.recipient_name || ''},${w.department || ''},${w.total_value},${statusLabel(w.status)}\n`;
@@ -2675,10 +2793,10 @@ function exportToExcel() {
   });
   csv += `\n=== สรุป ===\n`;
   csv += `ต้นทุนนำเข้ารวม,${d.totals.total_import_cost}\n`;
-  csv += `มูลค่าเบิกจ่ายรวม,${d.totals.total_withdrawal_value}\n`;
+  csv += `มูลค่าการขายรวม,${d.totals.total_withdrawal_value}\n`;
   csv += `มูลค่าสต็อคปัจจุบัน,${d.totals.total_stock_value}\n`;
   csv += `รายได้รวม (ราคาขาย),${$('#rpt-stat-revenue').text()}\n`;
-  csv += `ต้นทุนสินค้าที่เบิก,${$('#rpt-stat-cogs').text()}\n`;
+  csv += `ต้นทุนสินค้าที่ขาย,${$('#rpt-stat-cogs').text()}\n`;
   csv += `กำไรขั้นต้น,${$('#rpt-stat-profit').text()}\n`;
   csv += `Gross Margin,${$('#rpt-stat-margin').text()}\n`;
   csv += `ค่าใช้จ่ายรายเดือน,${d.totals.total_expenses || 0}\n`;

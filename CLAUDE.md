@@ -20,6 +20,7 @@
 | `/dashboard/receive/` | `receive` | `loadReceive()` |
 | `/dashboard/stock/` | `stock` | `loadStock()` |
 | `/dashboard/stock/imports/` | `stock-imports` | `loadStockImportHistory()` |
+| `/dashboard/bestsellers/` | `bestsellers` | `loadBestSellers()` |
 | `/dashboard/withdrawal/` | `withdrawal` | `loadWithdrawal()` |
 | `/dashboard/transfer/` | `transfer` | `loadTransfer()` |
 | `/dashboard/recipients/` | `recipients` | `loadRecipients()` |

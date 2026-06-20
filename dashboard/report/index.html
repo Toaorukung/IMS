@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>รายงานประจำเดือน – ระบบเบิกสินค้าและจัดการคลังสินค้า (Inventory Management System)</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231d54a8' rx='20'/><text x='50' y='70' font-size='60' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>📦</text></svg>" />
+  <title>รายงานประจำเดือน – ระบบขายสินค้าและจัดการคลังสินค้า (Inventory Management System)</title>
+  <link rel="icon" href="/assets/img/logo.png" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
   <link rel="stylesheet" href="../../assets/css/style.css">
@@ -71,13 +71,13 @@
     <div class="row g-3 mb-4">
       <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon blue"><i class="fas fa-ship"></i></div><div class="stat-value" id="rpt-stat-imports">-</div><div class="stat-label" data-i18n="rpt_stat_imports">รายการสั่งซื้อ</div></div></div>
       <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon red"><i class="fas fa-coins"></i></div><div class="stat-value small" id="rpt-stat-import-cost">-</div><div class="stat-label" data-i18n="rpt_stat_import_cost">ต้นทุนนำเข้ารวม</div></div></div>
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon green"><i class="fas fa-file-export"></i></div><div class="stat-value" id="rpt-stat-withdrawals">-</div><div class="stat-label" data-i18n="rpt_stat_withdrawals">ใบเบิกที่เสร็จสิ้น</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon green"><i class="fas fa-file-export"></i></div><div class="stat-value" id="rpt-stat-withdrawals">-</div><div class="stat-label" data-i18n="rpt_stat_withdrawals">บิลขายที่เสร็จสิ้น</div></div></div>
       <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon teal"><i class="fas fa-wallet"></i></div><div class="stat-value small" id="rpt-stat-stock-value">-</div><div class="stat-label" data-i18n="rpt_stat_stock_value">มูลค่าสต็อคปัจจุบัน</div></div></div>
     </div>
     <!-- Profit summary row -->
     <div class="row g-3 mb-4">
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon blue"><i class="fas fa-tags"></i></div><div class="stat-value small" id="rpt-stat-revenue">-</div><div class="stat-label">รายได้จากเบิก (ราคาขาย)</div></div></div>
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon red"><i class="fas fa-box-open"></i></div><div class="stat-value small" id="rpt-stat-cogs">-</div><div class="stat-label">ต้นทุนสินค้าที่เบิก</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon blue"><i class="fas fa-tags"></i></div><div class="stat-value small" id="rpt-stat-revenue">-</div><div class="stat-label">รายได้จากการขาย (ราคาขาย)</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon red"><i class="fas fa-box-open"></i></div><div class="stat-value small" id="rpt-stat-cogs">-</div><div class="stat-label">ต้นทุนสินค้าที่ขาย</div></div></div>
       <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon green"><i class="fas fa-chart-line"></i></div><div class="stat-value small" id="rpt-stat-profit">-</div><div class="stat-label">กำไรขั้นต้น</div></div></div>
       <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-icon teal"><i class="fas fa-percentage"></i></div><div class="stat-value" id="rpt-stat-margin">-</div><div class="stat-label">Gross Margin</div></div></div>
     </div>
@@ -100,7 +100,7 @@
       </div>
     </div>
     <div class="panel mb-4">
-      <div class="panel-header"><div class="panel-title"><i class="fas fa-file-export me-2"></i>รายการเบิกจ่าย (เสร็จสิ้น)</div></div>
+      <div class="panel-header"><div class="panel-title"><i class="fas fa-file-export me-2"></i>รายการขาย (เสร็จสิ้น)</div></div>
       <div class="table-responsive">
         <table class="table">
           <thead><tr><th>รหัส</th><th>วันที่</th><th>ผู้รับ</th><th>แผนก</th><th class="text-end">มูลค่า</th><th>สถานะ</th></tr></thead>
@@ -121,7 +121,7 @@
       <div class="panel-header"><div class="panel-title"><i class="fas fa-chart-line me-2 text-success"></i>กำไรรายสินค้า</div></div>
       <div class="table-responsive">
         <table class="table">
-          <thead><tr><th>ชื่อสินค้า</th><th class="text-center">จำนวนเบิก</th><th class="text-end">ต้นทุน/ชิ้น</th><th class="text-end">ราคาขาย/ชิ้น</th><th class="text-end">รายได้</th><th class="text-end">ต้นทุน</th><th class="text-end fw-bold">กำไร</th><th class="text-end">Margin</th></tr></thead>
+          <thead><tr><th>ชื่อสินค้า</th><th class="text-center">จำนวนขาย</th><th class="text-end">ต้นทุน/ชิ้น</th><th class="text-end">ราคาขาย/ชิ้น</th><th class="text-end">รายได้</th><th class="text-end">ต้นทุน</th><th class="text-end fw-bold">กำไร</th><th class="text-end">Margin</th></tr></thead>
           <tbody id="rpt-profit-body"></tbody>
         </table>
       </div>

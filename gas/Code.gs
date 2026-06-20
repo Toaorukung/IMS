@@ -755,7 +755,7 @@ function addImportExtraCost(p) {
   stockRows.forEach(function(row, i) {
     if (String(row.product_id) !== productId) return;
     var qty = parseFloat(row.quantity) || 0;
-    if (qty <= 0) return; // ล็อตที่ถูกเบิกหมดแล้ว
+    if (qty <= 0) return; // ล็อตที่ถูกขายหมดแล้ว
     var newCost = (parseFloat(row.cost_price) || 0) + extraPerUnit;
     stockSheet.getRange(i + 2, costCol).setValue(newCost);
     if (updatedCol > 0) stockSheet.getRange(i + 2, updatedCol).setValue(now());
@@ -764,7 +764,7 @@ function addImportExtraCost(p) {
   });
 
   if (updatedLots === 0)
-    return { success: false, message: 'สินค้านี้ถูกเบิกออกหมดแล้ว ไม่มีสต็อคคงเหลือที่จะอัพเดท' };
+    return { success: false, message: 'สินค้านี้ถูกขายออกหมดแล้ว ไม่มีสต็อคคงเหลือที่จะอัพเดท' };
 
   return {
     success: true,
@@ -977,7 +977,7 @@ function addWithdrawal(data) {
       items.forEach(function(i) { deductStockFIFO(i.product_id, parseFloat(i.quantity)); });
     }
   }
-  return { success: true, id, message: 'บันทึกใบเบิกสำเร็จ' };
+  return { success: true, id, message: 'บันทึกบิลขายสำเร็จ' };
 }
 
 function updateWithdrawalStatus(data) {
@@ -987,7 +987,7 @@ function updateWithdrawalStatus(data) {
   if (!sheet) return { success: false };
   const rows   = sheetToObjects(sheet);
   const record = rows.find(r => r.id === data.id);
-  if (!record) return { success: false, message: 'ไม่พบใบเบิก' };
+  if (!record) return { success: false, message: 'ไม่พบบิลขาย' };
   const oldStatus = record.status;
   const branchId  = record.branch_id || '';
   updateRow(sheet, data.id, { status: data.status });
@@ -1012,9 +1012,9 @@ function updateWithdrawalStatus(data) {
   return { success: true, message: 'อัพเดทสถานะสำเร็จ' };
 }
 
-// แก้ไขใบเบิก/ใบกำกับภาษีจากหน้า preview — แก้ได้ทุกช่อง บันทึกกลับเข้าระบบ
+// แก้ไขบิลขาย/ใบกำกับภาษีจากหน้า preview — แก้ได้ทุกช่อง บันทึกกลับเข้าระบบ
 // หมายเหตุสำคัญ: การแก้รายการสินค้าที่นี่ "ไม่" ปรับสต็อก (FIFO) — เป็นการแก้เอกสารบิลเท่านั้น
-// ถ้าต้องการปรับสต็อกให้ใช้ flow คืนสินค้า/เบิกสินค้าตามปกติ
+// ถ้าต้องการปรับสต็อกให้ใช้ flow คืนสินค้า/ขายสินค้าตามปกติ
 function updateWithdrawal(data) {
   var auth = requireAuth(data); // any authenticated role (staff แก้บิลสาขาตัวเองได้)
   if (!auth.ok) return { success: false, message: auth.message };
@@ -1022,12 +1022,12 @@ function updateWithdrawal(data) {
   if (!sheet) return { success: false };
   const rows   = sheetToObjects(sheet);
   const record = rows.find(function(r) { return r.id === data.id; });
-  if (!record) return { success: false, message: 'ไม่พบใบเบิก' };
+  if (!record) return { success: false, message: 'ไม่พบบิลขาย' };
 
-  // บังคับสิทธิ์ระดับสาขา — ผู้ที่ไม่ใช่ superadmin แก้ได้เฉพาะใบเบิกในสาขาตัวเอง
+  // บังคับสิทธิ์ระดับสาขา — ผู้ที่ไม่ใช่ superadmin แก้ได้เฉพาะบิลขายในสาขาตัวเอง
   if (auth.user.role !== 'superadmin' &&
       String(record.branch_id || '') !== String(auth.user.branch_id || '')) {
-    return { success: false, message: 'ไม่มีสิทธิ์แก้ไขใบเบิกของสาขาอื่น' };
+    return { success: false, message: 'ไม่มีสิทธิ์แก้ไขบิลขายของสาขาอื่น' };
   }
 
   const updates = {};
@@ -1063,9 +1063,9 @@ function partialReturn(data) {
   if (!sheet) return { success: false };
   const rows   = sheetToObjects(sheet);
   const record = rows.find(r => r.id === data.id);
-  if (!record) return { success: false, message: 'ไม่พบใบเบิก' };
+  if (!record) return { success: false, message: 'ไม่พบบิลขาย' };
   if (record.status !== 'completed' && record.status !== 'partial_returned')
-    return { success: false, message: 'สามารถคืนได้เฉพาะใบเบิกที่เสร็จสิ้นแล้ว' };
+    return { success: false, message: 'สามารถคืนได้เฉพาะบิลขายที่เสร็จสิ้นแล้ว' };
 
   const returnItems = data.return_items || [];
   if (!returnItems.length) return { success: false, message: 'กรุณาระบุรายการที่ต้องการคืน' };
@@ -1277,7 +1277,7 @@ function cancelTransfer(data) {
       .reduce(function(s, l) { return s + (parseFloat(l.quantity) || 0); }, 0) : 0;
     if (!destPid || destAvail < q) {
       return { success: false, message: 'ยกเลิกไม่ได้: "' + (pname || code) +
-        '" ที่ปลายทางคงเหลือ ' + destAvail + ' (ต้องคืน ' + q + ') — อาจถูกเบิก/โยกต่อไปแล้ว' };
+        '" ที่ปลายทางคงเหลือ ' + destAvail + ' (ต้องคืน ' + q + ') — อาจถูกขาย/โยกต่อไปแล้ว' };
     }
     plan.push({ q: q, destPid: destPid, srcPid: r.product_id, srcCost: parseFloat(r.unit_cost) || 0 });
   }

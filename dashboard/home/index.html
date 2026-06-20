@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>แดชบอร์ด – ระบบเบิกสินค้าและจัดการคลังสินค้า (Inventory Management System)</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231d54a8' rx='20'/><text x='50' y='70' font-size='60' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>📦</text></svg>" />
+  <title>แดชบอร์ด – ระบบขายสินค้าและจัดการคลังสินค้า (Inventory Management System)</title>
+  <link rel="icon" href="/assets/img/logo.png" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
   <link rel="stylesheet" href="../../assets/css/style.css">
@@ -53,7 +53,7 @@
       <div class="stat-card stat-red">
         <div class="stat-icon"><i class="fas fa-file-export"></i></div>
         <div class="stat-value" id="stat-today-withdrawals">–</div>
-        <div class="stat-label" data-i18n="stat_today_wd">เบิกวันนี้</div>
+        <div class="stat-label" data-i18n="stat_today_wd">ขายวันนี้</div>
       </div>
     </div>
   </div>
@@ -92,8 +92,8 @@
         <div class="col-6 col-md-3">
           <div class="qa-card" onclick="window.location.href='/dashboard/withdrawal/?new=1'">
             <div class="qa-icon qa-green"><i class="fas fa-file-export"></i></div>
-            <div class="qa-label" data-i18n="qa_withdrawal">เบิกสินค้า</div>
-            <div class="qa-sub" data-i18n="qa_withdrawal_sub">ส่งคำขอเบิกใหม่</div>
+            <div class="qa-label" data-i18n="qa_withdrawal">ขายสินค้า</div>
+            <div class="qa-sub" data-i18n="qa_withdrawal_sub">สร้างบิลขายใหม่</div>
           </div>
         </div>
         <div class="col-6 col-md-3">
@@ -125,12 +125,12 @@
   <!-- RECENT WITHDRAWALS -->
   <div class="panel">
     <div class="panel-header">
-      <div class="panel-title" data-i18n="recent_wd"><i class="fas fa-history me-2 text-primary"></i>การเบิกล่าสุด</div>
+      <div class="panel-title" data-i18n="recent_wd"><i class="fas fa-history me-2 text-primary"></i>การขายล่าสุด</div>
       <a href="/dashboard/withdrawal/" class="btn btn-sm btn-outline-primary" data-i18n="btn_view_all">ดูทั้งหมด</a>
     </div>
     <div class="table-responsive">
       <table class="table">
-        <thead><tr><th data-i18n="th_id">รหัส</th><th data-i18n="th_date">วันที่</th><th data-i18n="th_withdrawer">ผู้เบิก</th><th class="text-center" data-i18n="th_items">รายการ</th><th data-i18n="th_status">สถานะ</th></tr></thead>
+        <thead><tr><th data-i18n="th_id">รหัส</th><th data-i18n="th_date">วันที่</th><th data-i18n="th_withdrawer">ลูกค้า</th><th class="text-center" data-i18n="th_items">รายการ</th><th data-i18n="th_status">สถานะ</th></tr></thead>
         <tbody id="recent-withdrawals-body">
           <tr><td colspan="5" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>
         </tbody>

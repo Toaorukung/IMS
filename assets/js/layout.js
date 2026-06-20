@@ -13,7 +13,8 @@ function initLayout(activePage) {
     { key: 'home',      icon: 'fa-tachometer-alt', label: _t('nav_home'),     url: '/dashboard/home/' },
     { key: 'purchase',  icon: 'fa-shopping-cart',  label: _t('nav_purchase'), url: '/dashboard/purchase/' },
     { key: 'receive',   icon: 'fa-truck-loading',  label: _t('nav_receive'),  url: '/dashboard/receive/' },
-    { key: 'stock',     icon: 'fa-warehouse',      label: _t('nav_stock'),    url: '/dashboard/stock/' }
+    { key: 'stock',       icon: 'fa-warehouse',  label: _t('nav_stock'),       url: '/dashboard/stock/' },
+    { key: 'bestsellers', icon: 'fa-trophy',     label: _t('nav_bestsellers'), url: '/dashboard/bestsellers/' }
   ] : [];
 
   const menuWithdrawal = isAdmin ? [
@@ -51,7 +52,8 @@ function initLayout(activePage) {
 
   document.getElementById('sidebar').innerHTML = `
     <div class="sidebar-brand d-flex align-items-center gap-2">
-      <div class="sidebar-brand-icon"><i class="fas fa-boxes"></i></div>
+      <img src="/assets/img/logo.png" alt="โลโก้" class="sidebar-brand-icon">
+
       <div>
         <div class="sidebar-brand-text">${_t('sidebar_brand')}</div>
         <div class="sidebar-brand-ver">v1.2.2</div>

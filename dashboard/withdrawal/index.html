@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>เบิกสินค้า – ระบบเบิกสินค้าและจัดการคลังสินค้า (Inventory Management System)</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%231d54a8' rx='20'/><text x='50' y='70' font-size='60' text-anchor='middle' fill='white' font-family='Arial' font-weight='bold'>📦</text></svg>" />
+  <title>ขายสินค้า – ระบบขายสินค้าและจัดการคลังสินค้า (Inventory Management System)</title>
+  <link rel="icon" href="/assets/img/logo.png" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
   <link rel="stylesheet" href="../../assets/css/style.css">
@@ -18,7 +18,7 @@
   <div id="topbar">
     <div class="d-flex align-items-center gap-3">
       <button id="sidebar-toggle" class="btn btn-sm btn-outline-secondary d-lg-none"><i class="fas fa-bars"></i></button>
-      <div class="topbar-title" id="topbar-title" data-i18n="page_withdrawal">เบิกสินค้า</div>
+      <div class="topbar-title" id="topbar-title" data-i18n="page_withdrawal">ขายสินค้า</div>
     </div>
     <div class="topbar-actions">
       <a href="/dashboard/home/" class="btn btn-sm btn-outline-secondary" title="หน้าหลัก"><i class="fas fa-home"></i></a>
@@ -28,8 +28,8 @@
 
   <div class="page-body">
   <div class="section-header mb-3">
-    <div class="section-header-title"><i class="fas fa-file-export me-2 text-primary"></i><span data-i18n="page_withdrawal">เบิกสินค้า</span></div>
-    <button class="btn btn-primary" data-i18n="btn_new_wd" onclick="openWithdrawalModal()"><i class="fas fa-plus me-1"></i>สร้างใบเบิก</button>
+    <div class="section-header-title"><i class="fas fa-file-export me-2 text-primary"></i><span data-i18n="page_withdrawal">ขายสินค้า</span></div>
+    <button class="btn btn-primary" data-i18n="btn_new_wd" onclick="openWithdrawalModal()"><i class="fas fa-plus me-1"></i>สร้างบิลขาย</button>
   </div>
   <div class="filter-tabs">
     <div class="filter-tab active wd-filter" data-filter="all" data-i18n="filter_all">ทั้งหมด</div>
@@ -55,19 +55,19 @@
 
 <div id="toast-container"></div>
 
-<!-- MODAL: สร้างใบเบิก -->
+<!-- MODAL: สร้างบิลขาย -->
 <div class="modal fade" id="modalWithdrawal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" data-i18n="modal_wd_title"><i class="fas fa-file-export me-2"></i>สร้างใบเบิกสินค้า</h5>
+        <h5 class="modal-title" data-i18n="modal_wd_title"><i class="fas fa-file-export me-2"></i>สร้างบิลขายสินค้า</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <form id="wd-form">
           <div class="row g-3 mb-3" id="wd-branch-row">
             <div class="col-md-5">
-              <label class="form-label">สาขา (โกดังที่เบิก) <span class="text-danger">*</span></label>
+              <label class="form-label">สาขา (โกดังที่ขาย) <span class="text-danger">*</span></label>
               <select class="form-select" id="wd-branch" onchange="onWdBranchChange()">
                 <option value="">-- เลือกสาขา --</option>
               </select>
@@ -84,13 +84,13 @@
               <input type="text" class="form-control" id="wd-department" placeholder="แผนก">
             </div>
             <div class="col-md-2">
-              <label class="form-label">วันที่เบิก <span class="text-danger">*</span></label>
+              <label class="form-label">วันที่ขาย <span class="text-danger">*</span></label>
               <input type="date" class="form-control" id="wd-date">
             </div>
             <div class="col-md-3">
               <label class="form-label">ประเภท</label>
               <select class="form-select" id="wd-type">
-                <option value="normal">เบิกสินค้าออก</option>
+                <option value="normal">ขายออก</option>
                 <option value="return">คืนสินค้าเข้าสต็อค</option>
               </select>
             </div>
@@ -149,17 +149,17 @@
   </div>
 </div>
 
-<!-- MODAL: ดูรายละเอียดใบเบิก -->
+<!-- MODAL: ดูรายละเอียดบิลขาย -->
 <div class="modal fade" id="modalViewWd" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" data-i18n="modal_view_wd_title"><i class="fas fa-file-invoice me-2"></i>รายละเอียดใบเบิก</h5>
+        <h5 class="modal-title" data-i18n="modal_view_wd_title"><i class="fas fa-file-invoice me-2"></i>รายละเอียดบิลขาย</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body" id="view-wd-body"></div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" id="btn-print-receipt"><i class="fas fa-print me-1"></i><span data-i18n="btn_print">พิมพ์ใบเบิก</span></button>
+        <button type="button" class="btn btn-outline-secondary" id="btn-print-receipt"><i class="fas fa-print me-1"></i><span data-i18n="btn_print">พิมพ์บิลขาย</span></button>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="btn_close">ปิด</button>
       </div>
     </div>

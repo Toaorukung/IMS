@@ -170,10 +170,8 @@ body {
 .login-logo {
   width: 64px; height: 64px;
   border-radius: 16px;
-  background: var(--primary);
-  color: #fff;
-  font-size: 1.8rem;
-  display: flex; align-items: center; justify-content: center;
+  object-fit: contain;
+  display: block;
   margin: 0 auto 20px;
 }
 .login-title { font-size: 1.5rem; font-weight: 700; text-align: center; }
@@ -229,10 +227,9 @@ body {
 }
 .sidebar-brand-icon {
   width: 40px; height: 40px;
-  background: linear-gradient(135deg, #1a56db, #3b82f6);
   border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 1.1rem;
+  object-fit: contain;
+  display: block;
   box-shadow: 0 4px 14px rgba(26,86,219,.45);
 }
 .sidebar-brand-text { font-size: 1rem; font-weight: 700; color: #f1f5f9; margin-left: 12px; }
@@ -431,6 +428,34 @@ body {
 /* คอลัมน์ "สาขา" — แสดงเฉพาะ superadmin ที่เห็นข้อมูลข้ามสาขา (admin/staff ล็อกสาขาเดียว ไม่ต้องโชว์) */
 .col-branch { display: none; }
 body.is-superadmin .col-branch { display: table-cell; }
+
+/* --- Best Sellers (สินค้าขายดี) blocks --- */
+.bs-grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: stretch; }
+.bs-card {
+  flex: 1 1 200px; min-width: 180px; max-width: 260px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 14px;
+  padding: 16px 16px 14px; position: relative;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06); transition: transform .15s, box-shadow .15s;
+}
+.bs-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.10); }
+.bs-card .bs-rank { position: absolute; top: 10px; right: 13px; font-weight: 800; font-size: 1.25rem; color: #cbd5e1; }
+.bs-card .bs-name { font-weight: 700; font-size: 1rem; line-height: 1.25; margin-bottom: 2px; padding-right: 36px; color: #0f172a; }
+.bs-card .bs-code { color: #64748b; font-size: .78rem; margin-bottom: 12px; min-height: 1em; }
+.bs-card .bs-qty  { font-size: 1.85rem; font-weight: 800; line-height: 1; color: #0f172a; }
+.bs-card .bs-qty small { font-size: .8rem; font-weight: 500; color: #64748b; }
+.bs-card .bs-bar  { height: 6px; background: #f1f5f9; border-radius: 4px; margin-top: 10px; overflow: hidden; }
+.bs-card .bs-bar > span { display: block; height: 100%; border-radius: 4px; background: #1d4ed8; }
+.bs-card .bs-value { margin-top: 8px; color: #0d9488; font-weight: 600; font-size: .9rem; }
+.bs-card .bs-medal { margin-right: 4px; }
+.bs-card.rank-1 { border-color: #f59e0b; background: linear-gradient(145deg, #fff 58%, #fffbeb); }
+.bs-card.rank-1 .bs-rank { color: #f59e0b; }
+.bs-card.rank-1 .bs-bar > span { background: #f59e0b; }
+.bs-card.rank-2 { border-color: #94a3b8; background: linear-gradient(145deg, #fff 58%, #f8fafc); }
+.bs-card.rank-2 .bs-rank { color: #94a3b8; }
+.bs-card.rank-2 .bs-bar > span { background: #94a3b8; }
+.bs-card.rank-3 { border-color: #d97706; background: linear-gradient(145deg, #fff 58%, #fff7ed); }
+.bs-card.rank-3 .bs-rank { color: #b45309; }
+.bs-card.rank-3 .bs-bar > span { background: #d97706; }
 
 /* --- Buttons --- */
 .btn { font-family: 'Sarabun', sans-serif; font-weight: 600; border-radius: 9px; letter-spacing: .2px; transition: all .18s; }
