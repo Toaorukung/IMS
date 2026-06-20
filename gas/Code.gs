@@ -592,43 +592,112 @@ function getStock(p) {
 }
 
 // ---------- Imports (Purchase Orders) ----------
-// คืน import ทุกรายการที่มีสินค้านี้ เรียงจากใหม่ไปเก่า
+// คืนที่มาของสต็อกสินค้านี้ (เรียงใหม่→เก่า): การนำเข้า (imports) + การโยกของเข้าสาขา (transfers)
+// match ด้วย "code" ครอบทุกสาขาที่เกี่ยวข้อง (ไม่ใช่แค่ product_id เดียว) เพราะ catalog แยกตามสาขา
+// — สินค้ารหัสเดียวกันคนละสาขามี product_id ต่างกัน, และของที่โยก/รับข้ามสาขาก็ไม่อ้าง product_id เดิม
 function getStockImportHistory(p) {
   const auth = requireAuth(p);
   if (!auth.ok) return { success: false, message: auth.message };
   const sheet = getSheet('Imports');
   if (!sheet) return { success: false, message: 'ไม่พบชีท Imports' };
-  const productId = String((p || {}).product_id || '');
-  const branchId  = effectiveBranchId(auth.user, (p || {}).branch_id);
-  if (!productId) return { success: false, message: 'ต้องระบุ product_id' };
+  // รองรับทั้ง product_id เดียว และหลายตัว (product_ids = "id1,id2,...") — ใช้กับแถวสต็อกที่รวมหลาย lot/สาขา
+  var idsRaw = String((p || {}).product_ids || (p || {}).product_id || '');
+  var idSet = {};
+  idsRaw.split(',').forEach(function(x) { x = String(x).trim(); if (x) idSet[x] = true; });
+  if (!Object.keys(idSet).length) return { success: false, message: 'ต้องระบุ product_id' };
+  const branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
+
+  // map product_id → branch/code จาก Stock (สาขาจริง) แล้ว fallback ไป Products
+  var stockBranchOf = {}, codeOf = {};
+  var stockSheet = getSheet('Stock');
+  if (stockSheet) sheetToObjects(stockSheet).forEach(function(l) {
+    var pid = String(l.product_id);
+    if (!stockBranchOf[pid] && l.branch_id)    stockBranchOf[pid] = String(l.branch_id);
+    if (!codeOf[pid]        && l.product_code) codeOf[pid]        = String(l.product_code);
+  });
+  var prodBranchOf = {}, prodCodeOf = {};
+  var prodSheet = getSheet('Products');
+  if (prodSheet) sheetToObjects(prodSheet).forEach(function(pp) {
+    var pid = String(pp.id);
+    if (pp.branch_id) prodBranchOf[pid] = String(pp.branch_id);
+    if (pp.code)      prodCodeOf[pid]   = String(pp.code);
+  });
+  function branchOf(pid) { return stockBranchOf[pid] || prodBranchOf[pid] || ''; }
+  function codeFor(pid)  { return codeOf[pid]        || prodCodeOf[pid]   || ''; }
+
+  // สร้างชุด code + สาขาเป้าหมายจาก product_id ที่ขอมา (= สาขาที่กำลังดูอยู่)
+  var targetCodes = {}, targetBranches = {};
+  Object.keys(idSet).forEach(function(pid) {
+    var c = codeFor(pid);  if (c) targetCodes[c]    = true;
+    var b = branchOf(pid); if (b) targetBranches[b] = true;
+  });
+  var hasCodes    = Object.keys(targetCodes).length    > 0;
+  var hasBranches = Object.keys(targetBranches).length > 0;
 
   let rows = sheetToObjects(sheet);
   rows = filterByBranch(rows, branchId, auth.user.role);
 
   const result = [];
+
+  // ---- ที่มา 1: การนำเข้า (Imports) ----
   rows.forEach(function(r) {
     var items = [];
     try { items = JSON.parse(r.items); } catch (_) { items = []; }
-    var matchItem = items.find(function(it) { return String(it.product_id) === productId; });
-    if (!matchItem) return;
 
-    // คำนวณ extraPerUnit จาก record (freight + additional / จำนวนทุก item)
-    // ใช้ได้ทั้ง import เก่าและใหม่ เพราะ items.unit_cost เก็บแค่ฐาน (¥×rate) เสมอ
+    // extraPerUnit จาก record (freight + additional / จำนวนทุก item) — เก็บฐานใน items.unit_cost เสมอ
     var totalQty = items.reduce(function(s, i) { return s + (parseFloat(i.quantity) || 0); }, 0);
     var freight  = parseFloat(r.freight_cost || 0);
     var addCosts = parseFloat(r.additional_costs || 0);
     var extraPerUnit = (r.status === 'received' && totalQty > 0) ? (freight + addCosts) / totalQty : 0;
 
-    result.push({
-      import_id:  r.id,
-      order_date: r.order_date,
-      supplier:   r.supplier,
-      status:     r.status,
-      quantity:   parseFloat(matchItem.quantity) || 0,
-      unit_cost:  (parseFloat(matchItem.unit_cost || matchItem.cost_price) || 0) + extraPerUnit,
-      created_at: r.created_at
+    items.forEach(function(item) {
+      var pid = String(item.product_id);
+      var c   = codeFor(pid);
+      var b   = branchOf(pid) || String(r.branch_id || '');
+      // match: product_id ตรง หรือ (code ตรง และอยู่ในสาขาเป้าหมาย)
+      var matched = idSet[pid] || (hasCodes && c && targetCodes[c] && (!hasBranches || targetBranches[b]));
+      if (!matched) return;
+      result.push({
+        import_id:   r.id,
+        product_id:  pid,
+        order_date:  r.order_date,
+        supplier:    r.supplier,
+        status:      r.status,
+        quantity:    parseFloat(item.quantity) || 0,
+        unit_cost:   (parseFloat(item.unit_cost || item.cost_price) || 0) + extraPerUnit,
+        created_at:  r.created_at,
+        branch_id:   b,
+        branch_name: getBranchName(b),
+        source:      'import'
+      });
     });
   });
+
+  // ---- ที่มา 2: การโยกของเข้าสาขา (Transfers → to_branch) ----
+  var trSheet = getSheet('Transfers');
+  if (trSheet && hasCodes) {
+    sheetToObjects(trSheet).forEach(function(tr) {
+      if (String(tr.status || 'completed') === 'cancelled') return;
+      var c   = String(tr.product_code || '');
+      var toB = String(tr.to_branch_id || '');
+      if (!c || !targetCodes[c]) return;
+      if (hasBranches && !targetBranches[toB]) return;       // จำกัดเฉพาะสาขาเป้าหมาย
+      if (branchId && toB !== String(branchId)) return;      // เคารพสิทธิ์สาขา (non-superadmin)
+      result.push({
+        import_id:   tr.id,
+        product_id:  String(tr.product_id || ''),
+        order_date:  tr.transfer_date,
+        supplier:    'โยกจาก ' + (getBranchName(String(tr.from_branch_id || '')) || tr.from_branch_id),
+        status:      'transfer',
+        quantity:    parseFloat(tr.quantity) || 0,
+        unit_cost:   parseFloat(tr.dest_unit_cost) || 0,
+        created_at:  tr.created_at,
+        branch_id:   toB,
+        branch_name: getBranchName(toB),
+        source:      'transfer'
+      });
+    });
+  }
 
   result.sort(function(a, b) {
     return new Date(b.order_date || b.created_at) - new Date(a.order_date || a.created_at);

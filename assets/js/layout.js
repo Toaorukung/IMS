@@ -54,7 +54,7 @@ function initLayout(activePage) {
       <div class="sidebar-brand-icon"><i class="fas fa-boxes"></i></div>
       <div>
         <div class="sidebar-brand-text">${_t('sidebar_brand')}</div>
-        <div class="sidebar-brand-ver">v1.2.1</div>
+        <div class="sidebar-brand-ver">v1.2.2</div>
       </div>
     </div>
     ${isAdmin ? `<div class="sidebar-section-label">${_t('menu_main')}</div>

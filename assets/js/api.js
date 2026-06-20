@@ -84,7 +84,7 @@ const API = (() => {
     updateUser: (d) => post({ action: 'updateUser', token: Auth.getToken(), ...d }),
 
     // Stock import history
-    getStockImportHistory: (productId) => get('getStockImportHistory', { product_id: productId, branch_id: Auth.getBranchId() }),
+    getStockImportHistory: (productIds) => get('getStockImportHistory', { product_ids: productIds, branch_id: Auth.getBranchId() }),
     addImportExtraCost:    (d)         => post({ action: 'addImportExtraCost', token: Auth.getToken(), ...d }),
 
     // Expenses
@@ -196,6 +196,7 @@ const Fmt = {
       cancelled:        { cls: 'bg-danger',            key: 'status_cancelled' },
       normal:           { cls: 'bg-primary',           key: 'status_normal_badge' },
       return:           { cls: 'bg-warning text-dark', key: 'status_return' },
+      transfer:         { cls: 'badge-teal',           key: 'status_transfer' },
       active:           { cls: 'bg-success',           key: 'status_active' },
       inactive:         { cls: 'bg-secondary',         key: 'status_inactive' },
     };

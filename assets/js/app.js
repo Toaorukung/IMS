@@ -881,7 +881,7 @@ function populateStockBranchFilter() {
   $('#stock-branch-filter').html(opts).val(stockView).show();
 }
 
-// รวมยอดสต็อกตาม รหัส+ชื่อสินค้า ข้ามสาขา (สำหรับมุมมองภาพรวม)
+// รวมยอดสต็อกตาม รหัส+ชื่อสินค้า (ใช้ทั้งมุมมองภาพรวมข้ามสาขา และมุมมองรายสาขา)
 function aggregateStockByProduct(rows) {
   const map = {};
   (rows || []).forEach(function (s) {
@@ -893,20 +893,27 @@ function aggregateStockByProduct(rows) {
       map[key] = {
         _aggregated: true, product_code: s.product_code || '',
         product_name: s.product_name || s.product_id || '', unit: s.unit || '',
-        quantity: 0, _value: 0, min_stock: 0, _branches: {}
+        quantity: 0, _value: 0, min_stock: 0, _branches: {}, _pids: {}
       };
     }
     const g = map[key];
     g.quantity  += qty;
     g._value    += qty * cost;
     g.min_stock += minQ;
-    if (s.branch_id) g._branches[s.branch_id] = true;
+    if (s.branch_id)  g._branches[s.branch_id]  = true;
+    if (s.product_id) g._pids[s.product_id]     = true;
     if (!g.unit && s.unit) g.unit = s.unit;
   });
   return Object.keys(map).map(function (k) {
     const g = map[k];
-    g.cost_price   = g.quantity > 0 ? g._value / g.quantity : 0;
-    g.branch_count = Object.keys(g._branches).length;
+    g.cost_price = g.quantity > 0 ? g._value / g.quantity : 0;
+    const branchIds = Object.keys(g._branches);
+    const pids      = Object.keys(g._pids);
+    g.branch_count  = branchIds.length;
+    // ถ้ารวมมาจากสาขาเดียว/สินค้าเดียว เก็บ id จริงไว้เพื่อแสดงชื่อสาขา + ปุ่มได้ตามปกติ
+    g.branch_id   = branchIds.length === 1 ? branchIds[0] : '';
+    g.product_id  = pids.length      === 1 ? pids[0]      : '';
+    g.product_ids = pids; // ทุก product_id ที่รวมอยู่ (ใช้ดึงประวัตินำเข้ารวมทุก lot/สาขา)
     return g;
   }).sort(function (a, b) { return (a.product_code || '').localeCompare(b.product_code || ''); });
 }
@@ -914,9 +921,10 @@ function aggregateStockByProduct(rows) {
 // dataset ตามมุมมองที่เลือก (ยังไม่กรองคำค้น)
 function stockViewRows() {
   if (stockView === '__all__') {
-    return Auth.isSuperAdmin() ? aggregateStockByProduct(App.stock) : App.stock;
+    return aggregateStockByProduct(App.stock);
   }
-  return App.stock.filter(function (s) { return String(s.branch_id || '') === String(stockView); });
+  const rows = App.stock.filter(function (s) { return String(s.branch_id || '') === String(stockView); });
+  return aggregateStockByProduct(rows);
 }
 
 // render ตาราง + stats ตามมุมมอง แล้วค่อยกรองด้วยคำค้น
@@ -948,24 +956,28 @@ function renderStockTable(data) {
     const minQty = parseFloat(s.min_stock || 0);
     const val    = qty * parseFloat(s.cost_price || 0);
     const isLow  = minQty > 0 && qty <= minQty;
-    const isAgg  = !!s._aggregated;
+    const hasPid  = !!s.product_id;          // รวมมาจาก product_id เดียว → ผูกปุ่มสั่งซื้อได้
+    const multiBr = (s.branch_count || 0) > 1; // อยู่หลายสาขา → โชว์จำนวนสาขาแทนชื่อ
+    const pidList = (s.product_ids || []).join(','); // product_id ทุกตัวของแถวนี้
     const safeName = (s.product_name || '').replace(/'/g, "\\'");
-    const orderBtn = (!isAgg && isLow)
+    const orderBtn = (hasPid && isLow)
       ? `<button class="btn btn-sm btn-warning" title="${t('btn_order')}"
            onclick="window.location.href='/dashboard/purchase/?new=1&product=${encodeURIComponent(s.product_id)}'">
            <i class="fas fa-shopping-cart me-1"></i>${t('btn_order')}</button>`
       : '';
-    // แถวรวมยอด: โชว์จำนวนสาขาแทนชื่อสาขา และซ่อนปุ่มที่ผูกกับ product_id เฉพาะสาขา
-    const brCell = isAgg
+    // ปุ่มประวัตินำเข้า — แสดงเสมอ ส่ง product_id ทุกตัวที่รวมอยู่ (กรองตามสาขาที่เลือกอยู่แล้ว)
+    const historyBtn = pidList
+      ? `<button class="btn btn-sm btn-outline-info me-1" title="${t('btn_import_history')}"
+          onclick="openStockImportHistory('${pidList}', '${safeName}')">
+          <i class="fas fa-history"></i></button>`
+      : '';
+    // อยู่หลายสาขา → badge จำนวนสาขา; สาขาเดียว → ชื่อสาขาจริง
+    const brCell = multiBr
       ? `<td class="col-branch"><span class="badge bg-light text-dark border fw-normal"><i class="fas fa-store-alt me-1 text-muted"></i>${s.branch_count} สาขา</span></td>`
       : branchCell(s.branch_id);
-    const actionCell = isAgg
-      ? '<td></td>'
-      : `<td class="text-end">
-        <button class="btn btn-sm btn-outline-info me-1" title="${t('btn_import_history')}"
-          onclick="openStockImportHistory('${s.product_id}', '${safeName}')">
-          <i class="fas fa-history"></i></button>${orderBtn}
-      </td>`;
+    const actionCell = (historyBtn || orderBtn)
+      ? `<td class="text-end">${historyBtn}${orderBtn}</td>`
+      : '<td></td>';
     return `<tr ${isLow ? 'class="table-warning"' : ''}>
       <td><span class="fw-semibold">${s.product_code || '-'}</span></td>
       <td>${s.product_name || s.product_id}</td>
@@ -980,33 +992,103 @@ function renderStockTable(data) {
   }).join(''));
 }
 
-function openStockImportHistory(productId, productName) {
-  window.location.href = `/dashboard/stock/imports/?id=${encodeURIComponent(productId)}&name=${encodeURIComponent(productName)}`;
+function openStockImportHistory(productIds, productName) {
+  // productIds = product_id เดียว หรือหลายตัวคั่นด้วย comma
+  window.location.href = `/dashboard/stock/imports/?ids=${encodeURIComponent(productIds)}&name=${encodeURIComponent(productName)}`;
 }
 
 async function loadStockImportHistory() {
   const params      = new URLSearchParams(window.location.search);
-  const productId   = params.get('id')   || '';
-  const productName = params.get('name') || productId;
+  const productIds  = params.get('ids') || params.get('id') || ''; // รองรับลิงก์เก่า (?id=) ด้วย
+  const productName = params.get('name') || productIds;
 
-  if (!productId) {
-    $('#sih-table-body').html(`<tr><td colspan="8" class="text-center text-danger py-5">ไม่พบรหัสสินค้า</td></tr>`);
+  if (!productIds) {
+    $('#sih-table-body').html(`<tr><td colspan="${colspanWithBranch(8)}" class="text-center text-danger py-5">ไม่พบรหัสสินค้า</td></tr>`);
     return;
   }
 
   $('#sih-product-title').text(productName);
   document.title = `${t('modal_stock_import_history')}: ${productName}`;
 
-  $('#sih-table-body').html('<tr><td colspan="8" class="text-center py-5"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>');
+  $('#sih-table-body').html(`<tr><td colspan="${colspanWithBranch(8)}" class="text-center py-5"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</td></tr>`);
 
   try {
-    const res = await API.getStockImportHistory(productId);
-    if (!res.success) throw new Error(res.message);
-    const data = res.data || [];
+    const idArr = productIds.split(',').map(s => s.trim()).filter(Boolean);
+    const idSet = new Set(idArr);
+
+    // ประกอบประวัติฝั่ง client จาก endpoint ที่ deploy อยู่แล้ว (ไม่ต้องพึ่ง getStockImportHistory)
+    const [stockRes, impRes, trRes] = await Promise.all([
+      API.getStock(),
+      API.getImports(),
+      Auth.isAdmin() ? API.getTransfers() : Promise.resolve({ success: true, data: [] })
+    ]);
+    await ensureBranchesLoaded();
+
+    // map product_id → code/name/branch จากสต็อกจริง (รหัสเดียวกันคนละสาขา = คนละ product_id)
+    const codeOf = {}, nameOf = {}, branchOf = {};
+    ((stockRes && stockRes.success && stockRes.data) || []).forEach(s => {
+      const pid = String(s.product_id);
+      if (s.product_code && !codeOf[pid])   codeOf[pid]   = String(s.product_code).trim();
+      if (s.product_name && !nameOf[pid])   nameOf[pid]   = String(s.product_name).trim();
+      if (s.branch_id    && !branchOf[pid]) branchOf[pid] = String(s.branch_id);
+    });
+    // คีย์จับคู่: ใช้ code ถ้ามี ไม่งั้นใช้ชื่อ (สอดคล้องกับการรวมแถวหน้าสต็อก = code|name)
+    const keyOf = (code, name) =>
+      String(code || '').trim().toLowerCase() || String(name || '').trim().toLowerCase();
+
+    // คีย์ + สาขาเป้าหมาย จาก product_id ที่ขอมา (= สาขาที่กำลังดู)
+    const targetKeys = new Set(), targetBranches = new Set();
+    idArr.forEach(pid => {
+      const k = keyOf(codeOf[pid], nameOf[pid]); if (k) targetKeys.add(k);
+      const b = branchOf[pid];                   if (b) targetBranches.add(b);
+    });
+    const hasKeys = targetKeys.size > 0, hasBranches = targetBranches.size > 0;
+
+    const data = [];
+
+    // ที่มา 1: การนำเข้า — match ด้วย product_id หรือ (code ตรง + อยู่ในสาขาเป้าหมาย)
+    ((impRes && impRes.success && impRes.data) || []).forEach(r => {
+      const items = Array.isArray(r.items) ? r.items : [];
+      const tQty  = items.reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
+      const freight  = parseFloat(r.freight_cost || 0);
+      const addCosts = parseFloat(r.additional_costs || 0);
+      const extraPerUnit = (r.status === 'received' && tQty > 0) ? (freight + addCosts) / tQty : 0;
+      items.forEach(item => {
+        const pid = String(item.product_id);
+        const k   = keyOf(codeOf[pid], nameOf[pid] || item.product_name);
+        const b   = branchOf[pid] || String(r.branch_id || '');
+        const matched = idSet.has(pid) || (hasKeys && k && targetKeys.has(k) && (!hasBranches || targetBranches.has(b)));
+        if (!matched) return;
+        data.push({
+          import_id:  r.id, product_id: pid, order_date: r.order_date, supplier: r.supplier,
+          status:     r.status, quantity: parseFloat(item.quantity) || 0,
+          unit_cost:  (parseFloat(item.unit_cost || item.cost_price) || 0) + extraPerUnit,
+          branch_id:  b, branch_name: branchName(b), source: 'import'
+        });
+      });
+    });
+
+    // ที่มา 2: การโยกของเข้าสาขา — match ด้วย code/ชื่อ + to_branch อยู่ในสาขาเป้าหมาย
+    if (hasKeys) ((trRes && trRes.success && trRes.data) || []).forEach(tr => {
+      if (String(tr.status || 'completed') === 'cancelled') return;
+      const k   = keyOf(tr.product_code, tr.product_name);
+      const toB = String(tr.to_branch_id || '');
+      if (!k || !targetKeys.has(k)) return;
+      if (hasBranches && !targetBranches.has(toB)) return;
+      data.push({
+        import_id:  tr.id, product_id: String(tr.product_id || ''), order_date: tr.transfer_date,
+        supplier:   'โยกจาก ' + (branchName(tr.from_branch_id) || tr.from_branch_id || '-'),
+        status:     'transfer', quantity: parseFloat(tr.quantity) || 0,
+        unit_cost:  parseFloat(tr.dest_unit_cost) || 0,
+        branch_id:  toB, branch_name: branchName(toB), source: 'transfer'
+      });
+    });
+
+    data.sort((a, b) => new Date(b.order_date || 0) - new Date(a.order_date || 0));
 
     if (!data.length) {
       $('#sih-stats-row').hide();
-      $('#sih-table-body').html(`<tr><td colspan="8" class="text-center text-muted py-5">${t('no_import_history')}</td></tr>`);
+      $('#sih-table-body').html(`<tr><td colspan="${colspanWithBranch(8)}" class="text-center text-muted py-5">${t('no_import_history')}</td></tr>`);
       return;
     }
 
@@ -1021,12 +1103,14 @@ async function loadStockImportHistory() {
       const safeSupplier = (r.supplier || '').replace(/'/g, "\\'");
       const extraBtn = (r.status === 'received' && Auth.isAdmin())
         ? `<button class="btn btn-sm btn-outline-warning" title="${t('btn_add_extra_cost')}"
-             onclick="openAddExtraCost('${r.import_id}', ${r.quantity}, '${safeSupplier}', '${r.order_date}')">
+             onclick="openAddExtraCost('${r.import_id}', '${r.product_id || ''}', ${r.quantity}, '${safeSupplier}', '${r.order_date}')">
              <i class="fas fa-plus me-1"></i>${t('btn_add_extra_cost')}</button>`
         : '';
+      const branchTd = `<td class="col-branch"><span class="badge bg-light text-dark border fw-normal"><i class="fas fa-store-alt me-1 text-muted"></i>${r.branch_name || r.branch_id || '-'}</span></td>`;
       return `<tr>
         <td>${Fmt.date(r.order_date)}</td>
         <td>${r.supplier || '-'}</td>
+        ${branchTd}
         <td class="text-center fw-bold">${Fmt.number(r.quantity)}</td>
         <td class="text-end">${Fmt.currency(r.unit_cost)}</td>
         <td class="text-end fw-semibold">${Fmt.currency(r.quantity * r.unit_cost)}</td>
@@ -1037,13 +1121,15 @@ async function loadStockImportHistory() {
     }).join(''));
   } catch (e) {
     showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger');
-    $('#sih-table-body').html(`<tr><td colspan="8" class="text-center text-danger py-4"><i class="fas fa-exclamation-circle me-2"></i>${e.message}</td></tr>`);
+    $('#sih-table-body').html(`<tr><td colspan="${colspanWithBranch(8)}" class="text-center text-danger py-4"><i class="fas fa-exclamation-circle me-2"></i>${e.message}</td></tr>`);
   }
 }
 
 let _ecModalInstance = null;
+let _ecProductId = ''; // product_id ของแถวที่กำลังเพิ่มต้นทุนแฝง (หน้าประวัติอาจรวมหลาย product_id)
 
-function openAddExtraCost(importId, qty, supplier, orderDate) {
+function openAddExtraCost(importId, productId, qty, supplier, orderDate) {
+  _ecProductId = productId || '';
   $('#ec-import-id').val(importId);
   $('#ec-orig-qty').val(qty);
   $('#ec-amount').val('');
@@ -1062,7 +1148,8 @@ function updateEcPerUnit() {
 }
 
 async function saveExtraCost() {
-  const productId = new URLSearchParams(window.location.search).get('id') || '';
+  // ใช้ product_id ของแถวที่กดเพิ่ม (ไม่ใช่จาก URL เพราะหน้านี้อาจรวมหลาย product_id)
+  const productId = _ecProductId || new URLSearchParams(window.location.search).get('id') || '';
   const importId  = $('#ec-import-id').val();
   const amount    = parseFloat($('#ec-amount').val()) || 0;
   const note      = $('#ec-note').val().trim();
