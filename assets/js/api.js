@@ -93,6 +93,14 @@ const API = (() => {
     updateExpense:         (d)  => post({ action: 'updateExpense', token: Auth.getToken(), ...d }),
     deleteExpense:         (id) => post({ action: 'deleteExpense', token: Auth.getToken(), id }),
     getExpenseCategories:  ()   => get('getExpenseCategories'),
+
+    // Income (รายรับ)
+    getIncome:             (month, year) => get('getIncome', { month, year, branch_id: Auth.getBranchId() }),
+    addIncome:             (d)  => post({ action: 'addIncome',    token: Auth.getToken(), branch_id: Auth.getBranchId(), ...d }),
+    updateIncome:          (d)  => post({ action: 'updateIncome', token: Auth.getToken(), ...d }),
+    deleteIncome:          (id) => post({ action: 'deleteIncome', token: Auth.getToken(), id }),
+    getIncomeCategories:   ()   => get('getIncomeCategories'),
+    getIncomeSummary:      (month, year) => get('getIncomeSummary', { month, year, branch_id: Auth.getBranchId() }),
   };
 })();
 

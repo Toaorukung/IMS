@@ -106,6 +106,7 @@ $(document).ready(async function () {
     case 'recipients': loadRecipients(); break;
     case 'report':     initReports();    break;
     case 'expenses':   loadExpenses();   break;
+    case 'income':     loadIncome();     break;
     case 'products':   loadProducts();   break;
     case 'users':      /* handled by inline script in users/index.html */ break;
   }
@@ -135,6 +136,7 @@ function loadSection(name) {
     recipients: '/dashboard/recipients/',
     reports:    '/dashboard/report/',
     expenses:   '/dashboard/expenses/',
+    income:     '/dashboard/income/',
     products:   '/dashboard/products/'
   };
   if (urls[name]) window.location.href = urls[name];
@@ -2925,6 +2927,139 @@ async function deleteExpenseConfirm(id) {
     if (!res.success) throw new Error(res.message);
     showToast('ลบรายการสำเร็จ', 'success');
     loadExpenses();
+  } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
+}
+
+// ============================================================
+// SECTION: INCOME (รายรับ / เงินกองกลาง)
+// ============================================================
+async function loadIncome() {
+  const month = $('#inc-filter-month').val();
+  const year  = $('#inc-filter-year').val();
+  try {
+    const [incRes, catRes, sumRes] = await Promise.all([
+      API.getIncome(month, year),
+      App._incomeCategories ? Promise.resolve({ success: true, data: App._incomeCategories }) : API.getIncomeCategories(),
+      API.getIncomeSummary(month, year),
+      ensureBranchesLoaded()
+    ]);
+    if (!incRes.success) throw new Error(incRes.message);
+    App._income = incRes.data || [];
+    if (catRes.success) {
+      App._incomeCategories = catRes.data || [];
+      populateIncomeCategorySelect(App._incomeCategories);
+    }
+    renderIncomeTable(App._income);
+    if (sumRes.success) renderIncomeSummary(sumRes.data);
+  } catch (e) { showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger'); }
+}
+
+function renderIncomeSummary(d) {
+  const cum = d.cumulative || {}, mon = d.month || {};
+  $('#inc-sum-month-income').text(Fmt.currency(mon.income || 0));
+  $('#inc-sum-month-expenses').text(Fmt.currency(mon.expenses || 0));
+  const remaining = cum.remaining || 0;
+  $('#inc-sum-remaining').text(Fmt.currency(remaining));
+  const $card = $('#inc-card-remaining');
+  $card.removeClass('text-bg-success text-bg-danger');
+  $card.addClass(remaining < 0 ? 'text-bg-danger' : 'text-bg-success');
+  $('#inc-sum-total-income').text(Fmt.currency(cum.income || 0));
+  $('#inc-sum-total-expenses').text(Fmt.currency(cum.expenses || 0));
+}
+
+function populateIncomeCategorySelect(categories) {
+  const $sel = $('#inc-category');
+  const current = $sel.val();
+  $sel.html('<option value="">-- เลือกหมวดหมู่ --</option>');
+  if (categories.length === 0) {
+    $sel.append('<option value="" disabled>ยังไม่มีหมวดหมู่ — เพิ่มใน Sheet "IncomeCategories"</option>');
+  } else {
+    categories.forEach(function(name) {
+      $sel.append(`<option value="${name}">${name}</option>`);
+    });
+  }
+  if (current) $sel.val(current);
+}
+
+function renderIncomeTable(data) {
+  if (!data.length) {
+    $('#income-table-body').html(`<tr><td colspan="${colspanWithBranch(6)}" class="text-center text-muted py-4">ไม่พบรายการรายรับในเดือนนี้</td></tr>`);
+    $('#inc-total').text('฿0.00');
+    return;
+  }
+  const total = data.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  $('#income-table-body').html(data.map(r => `<tr>
+    <td>${Fmt.date(r.date)}</td>
+    <td><span class="badge bg-success">${r.category || '-'}</span></td>
+    <td>${r.description || '-'}</td>
+    <td class="text-end fw-semibold text-success">${Fmt.currency(r.amount)}</td>
+    <td class="text-muted small">${r.created_by || '-'}</td>
+    ${branchCell(r.branch_id)}
+    <td>
+      <button class="btn btn-sm btn-outline-primary me-1" onclick="openEditIncome('${r.id}')"><i class="fas fa-edit"></i></button>
+      <button class="btn btn-sm btn-outline-danger" onclick="deleteIncomeConfirm('${r.id}')"><i class="fas fa-trash"></i></button>
+    </td>
+  </tr>`).join(''));
+  $('#inc-total').text(Fmt.currency(total));
+}
+
+async function openAddIncomeModal() {
+  App.editingId = null;
+  $('#modalIncomeLabel').html('<i class="fas fa-hand-holding-dollar me-2"></i>เพิ่มรายรับ');
+  $('#income-form')[0].reset();
+  $('#inc-date').val(new Date().toISOString().split('T')[0]);
+  new bootstrap.Modal('#modalIncome').show();
+  if (!App._incomeCategories) {
+    $('#inc-category').html('<option value="">กำลังโหลดหมวดหมู่...</option>');
+    const res = await API.getIncomeCategories();
+    if (res.success) App._incomeCategories = res.data || [];
+  }
+  populateIncomeCategorySelect(App._incomeCategories || []);
+}
+
+function openEditIncome(id) {
+  const r = (App._income || []).find(e => e.id === id);
+  if (!r) return;
+  App.editingId = id;
+  $('#modalIncomeLabel').html('<i class="fas fa-edit me-2"></i>แก้ไขรายรับ');
+  populateIncomeCategorySelect(App._incomeCategories || []);
+  $('#inc-date').val(String(r.date).split('T')[0]);
+  $('#inc-category').val(r.category || '');
+  $('#inc-description').val(r.description || '');
+  $('#inc-amount').val(r.amount || '');
+  new bootstrap.Modal('#modalIncome').show();
+}
+
+async function saveIncome() {
+  const date        = $('#inc-date').val();
+  const category    = $('#inc-category').val();
+  const description = $('#inc-description').val().trim();
+  const amount      = parseFloat($('#inc-amount').val());
+
+  if (!date || !category || isNaN(amount) || amount <= 0) {
+    showToast('กรุณากรอกวันที่ หมวดหมู่ และจำนวนเงิน', 'warning'); return;
+  }
+
+  const payload = { date, category, description, amount };
+  await withBtnLoading('#btn-save-income',
+    '<i class="fas fa-save me-1"></i>บันทึก', async () => {
+    const res = App.editingId
+      ? await API.updateIncome({ id: App.editingId, ...payload })
+      : await API.addIncome(payload);
+    if (!res.success) throw new Error(res.message);
+    bootstrap.Modal.getInstance('#modalIncome').hide();
+    showToast(res.message || 'บันทึกสำเร็จ', 'success');
+    loadIncome();
+  }).catch(e => showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'));
+}
+
+async function deleteIncomeConfirm(id) {
+  if (!confirm('ยืนยันลบรายการรายรับนี้?')) return;
+  try {
+    const res = await API.deleteIncome(id);
+    if (!res.success) throw new Error(res.message);
+    showToast('ลบรายการสำเร็จ', 'success');
+    loadIncome();
   } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
 }
 

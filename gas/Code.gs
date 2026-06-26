@@ -22,11 +22,13 @@ function setupAllSheets() {
     'Recipients':  ['id','name','department','position','phone','email','notes','status','created_at','branch_id','tax_id','address'],
     'Transfers':   ['id','transfer_date','product_id','product_name','product_code','quantity','from_branch_id','to_branch_id','transport_cost','labor_cost','unit_cost','dest_unit_cost','total_value','notes','created_by','created_at','batch_id','status'],
     'Expenses':    ['id','date','category','description','amount','branch_id','created_at','created_by'],
-    'ExpenseCategories': ['name']
+    'ExpenseCategories': ['name'],
+    'Income':      ['id','date','category','description','amount','branch_id','created_at','created_by'],
+    'IncomeCategories': ['name']
   };
 
   // Sheets ที่ไม่ต้องมี branch_id
-  const NO_BRANCH_ID = new Set(['Tokens', 'ExpenseCategories']);
+  const NO_BRANCH_ID = new Set(['Tokens', 'ExpenseCategories', 'IncomeCategories']);
 
   const log = [];
 
@@ -151,6 +153,12 @@ function processRequest(action, params, body) {
       case 'updateExpense':          return updateExpense(p);
       case 'deleteExpense':          return deleteExpense(p);
       case 'getExpenseCategories':   return getExpenseCategories(p);
+      case 'getIncome':              return getIncome(p);
+      case 'addIncome':              return addIncome(p);
+      case 'updateIncome':           return updateIncome(p);
+      case 'deleteIncome':           return deleteIncome(p);
+      case 'getIncomeCategories':    return getIncomeCategories(p);
+      case 'getIncomeSummary':       return getIncomeSummary(p);
       default: return { success: false, message: 'Unknown action: ' + action };
     }
   } catch (err) {
@@ -1723,4 +1731,121 @@ function getExpenseCategories(p) {
   var rows = sheetToObjects(sheet);
   var names = rows.map(function(r) { return String(r.name || '').trim(); }).filter(Boolean);
   return { success: true, data: names };
+}
+
+// ---------- Income (\u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a / \u0e40\u0e07\u0e34\u0e19\u0e01\u0e2d\u0e07\u0e01\u0e25\u0e32\u0e07) ----------
+function getIncome(p) {
+  var auth = requireAuth(p, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Income');
+  if (!sheet) return { success: false, message: '\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e0a\u0e35\u0e17 Income' };
+  var branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
+  var month    = parseInt((p || {}).month);
+  var year     = parseInt((p || {}).year);
+  var rows     = sheetToObjects(sheet);
+  rows = filterByBranch(rows, branchId, auth.user.role);
+  if (!isNaN(month) && !isNaN(year)) {
+    rows = rows.filter(function(r) {
+      var d = new Date(r.date);
+      return d.getMonth() === month - 1 && d.getFullYear() === year;
+    });
+  }
+  return { success: true, data: rows };
+}
+
+function addIncome(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Income');
+  if (!sheet) return { success: false, message: '\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e0a\u0e35\u0e17 Income \u0e01\u0e23\u0e38\u0e13\u0e32\u0e23\u0e31\u0e19 setupAllSheets() \u0e01\u0e48\u0e2d\u0e19' };
+  var id       = uid('INC');
+  var branchId = data.branch_id || auth.user.branch_id || '';
+  sheet.appendRow([id, data.date || now().split('T')[0], data.category || '',
+    data.description || '', parseFloat(data.amount) || 0, branchId, now(), auth.user.username || '']);
+  return { success: true, id, message: '\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01\u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08' };
+}
+
+function updateIncome(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Income');
+  if (!sheet) return { success: false };
+  var ok = updateRow(sheet, data.id, {
+    date:        data.date,
+    category:    data.category,
+    description: data.description,
+    amount:      parseFloat(data.amount) || 0
+  });
+  return { success: ok, message: ok ? '\u0e2d\u0e31\u0e1e\u0e40\u0e14\u0e17\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08' : '\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23' };
+}
+
+function deleteIncome(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Income');
+  if (!sheet) return { success: false };
+  var rows = sheetToObjects(sheet);
+  var idx  = rows.findIndex(function(r) { return r.id === data.id; });
+  if (idx === -1) return { success: false, message: '\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23' };
+  sheet.deleteRow(idx + 2);
+  return { success: true, message: '\u0e25\u0e1a\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08' };
+}
+
+function getIncomeCategories(p) {
+  var auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('IncomeCategories');
+  if (!sheet) return { success: true, data: [] };
+  var rows = sheetToObjects(sheet);
+  var names = rows.map(function(r) { return String(r.name || '').trim(); }).filter(Boolean);
+  return { success: true, data: names };
+}
+
+/**
+ * \u0e2a\u0e23\u0e38\u0e1b\u0e22\u0e2d\u0e14\u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a / \u0e23\u0e32\u0e22\u0e08\u0e48\u0e32\u0e22 / \u0e04\u0e07\u0e40\u0e2b\u0e25\u0e37\u0e2d
+ * - cumulative: \u0e22\u0e2d\u0e14\u0e2a\u0e30\u0e2a\u0e21\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14 (\u0e40\u0e07\u0e34\u0e19\u0e01\u0e2d\u0e07\u0e01\u0e25\u0e32\u0e07\u0e04\u0e07\u0e40\u0e2b\u0e25\u0e37\u0e2d)
+ * - month: \u0e40\u0e09\u0e1e\u0e32\u0e30\u0e40\u0e14\u0e37\u0e2d\u0e19/\u0e1b\u0e35\u0e17\u0e35\u0e48\u0e23\u0e30\u0e1a\u0e38 (\u0e16\u0e49\u0e32\u0e2a\u0e48\u0e07 month/year)
+ */
+function getIncomeSummary(p) {
+  var auth = requireAuth(p, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
+  var month    = parseInt((p || {}).month);
+  var year     = parseInt((p || {}).year);
+  var hasMonth = !isNaN(month) && !isNaN(year);
+
+  function sumSheet(name) {
+    var sheet = getSheet(name);
+    if (!sheet) return { total: 0, monthTotal: 0 };
+    var rows = filterByBranch(sheetToObjects(sheet), branchId, auth.user.role);
+    var total = 0, monthTotal = 0;
+    rows.forEach(function(r) {
+      var amt = parseFloat(r.amount) || 0;
+      total += amt;
+      if (hasMonth) {
+        var d = new Date(r.date);
+        if (d.getMonth() === month - 1 && d.getFullYear() === year) monthTotal += amt;
+      }
+    });
+    return { total: total, monthTotal: monthTotal };
+  }
+
+  var inc = sumSheet('Income');
+  var exp = sumSheet('Expenses');
+
+  return {
+    success: true,
+    data: {
+      cumulative: {
+        income:    inc.total,
+        expenses:  exp.total,
+        remaining: inc.total - exp.total
+      },
+      month: {
+        income:    inc.monthTotal,
+        expenses:  exp.monthTotal,
+        remaining: inc.monthTotal - exp.monthTotal
+      }
+    }
+  };
 }

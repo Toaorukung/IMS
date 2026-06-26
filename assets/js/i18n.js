@@ -21,6 +21,7 @@ const I18n = (() => {
       nav_transfer: 'โยกของข้ามโกดัง',
       nav_recipients: 'ผู้รับสินค้า',
       nav_report: 'รายงานรายเดือน',
+      nav_income: 'รายรับ',
       nav_expenses: 'ค่าใช้จ่ายรายเดือน',
       nav_products: 'จัดการสินค้า',
       // Common buttons
@@ -305,6 +306,7 @@ const I18n = (() => {
       nav_transfer: 'Transfer Between Warehouses',
       nav_recipients: 'Recipients',
       nav_report: 'Monthly Report',
+      nav_income: 'Income',
       nav_expenses: 'Monthly Expenses',
       nav_products: 'Products',
       // Common buttons
