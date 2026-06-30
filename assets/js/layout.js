@@ -32,6 +32,7 @@ function initLayout(activePage) {
     { key: 'income',    icon: 'fa-hand-holding-dollar', label: _t('nav_income'),   url: '/dashboard/income/' },
     { key: 'expenses',  icon: 'fa-receipt',       label: _t('nav_expenses'),  url: '/dashboard/expenses/' },
     { key: 'products',  icon: 'fa-tags',          label: _t('nav_products'),  url: '/dashboard/products/' },
+    { key: 'categories', icon: 'fa-layer-group',  label: _t('nav_categories'), url: '/dashboard/categories/' },
     ...(isSuperAdmin ? [{ key: 'users', icon: 'fa-users-cog', label: _t('nav_users'), url: '/dashboard/users/' }] : [])
   ] : [];
 
@@ -57,7 +58,7 @@ function initLayout(activePage) {
 
       <div>
         <div class="sidebar-brand-text">${_t('sidebar_brand')}</div>
-        <div class="sidebar-brand-ver">v1.2.2</div>
+        <div class="sidebar-brand-ver">v1.3.0</div>
       </div>
     </div>
     ${isAdmin ? `<div class="sidebar-section-label">${_t('menu_main')}</div>

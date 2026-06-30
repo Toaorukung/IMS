@@ -12,6 +12,7 @@ const App = {
   recipients: [],
   branches: [],
   transfers: [],
+  categories: [],
   currentSection: 'dashboard',
   editingId: null
 };
@@ -108,6 +109,7 @@ $(document).ready(async function () {
     case 'expenses':   loadExpenses();   break;
     case 'income':     loadIncome();     break;
     case 'products':   loadProducts();   break;
+    case 'categories': loadCategories(); break;
     case 'users':      /* handled by inline script in users/index.html */ break;
   }
 });
@@ -866,12 +868,28 @@ let stockView = '__all__';
 
 async function loadStock() {
   try {
-    const [res] = await Promise.all([API.getStock(), ensureBranchesLoaded()]);
+    const [res, pRes] = await Promise.all([API.getStock(), API.getProducts(), ensureBranchesLoaded(), ensureCategoriesLoaded()]);
     if (!res.success) throw new Error(res.message);
     App.stock = res.data || [];
+    if (pRes && pRes.success) App.products = pRes.data || [];
     populateStockBranchFilter();
+    populateCategoryFilter('#stock-cat-filter');
     applyStockView();
   } catch (e) { showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger'); }
+}
+
+// map ชื่อหมวดของสินค้า — ใช้แปะหมวดให้แถวสต็อค (Stock sheet ไม่มีคอลัมน์ category)
+function buildProductCatMap() {
+  const byCode = {}, byName = {};
+  (App.products || []).forEach(p => {
+    const cat = String(p.category || '').trim();
+    if (!cat) return;
+    const code = String(p.code || '').trim().toLowerCase();
+    const name = String(p.name || '').trim().toLowerCase();
+    if (code && !byCode[code]) byCode[code] = cat;
+    if (name && !byName[name]) byName[name] = cat;
+  });
+  return { byCode, byName };
 }
 
 // เติม dropdown เลือกสาขา (เฉพาะ superadmin — admin/staff เห็นสาขาตัวเองอยู่แล้ว)
@@ -907,9 +925,12 @@ function aggregateStockByProduct(rows) {
     if (s.product_id) g._pids[s.product_id]     = true;
     if (!g.unit && s.unit) g.unit = s.unit;
   });
+  const cm = buildProductCatMap();
   return Object.keys(map).map(function (k) {
     const g = map[k];
     g.cost_price = g.quantity > 0 ? g._value / g.quantity : 0;
+    g.category   = cm.byCode[(g.product_code || '').trim().toLowerCase()] ||
+                   cm.byName[(g.product_name || '').trim().toLowerCase()] || '';
     const branchIds = Object.keys(g._branches);
     const pids      = Object.keys(g._pids);
     g.branch_count  = branchIds.length;
@@ -932,7 +953,10 @@ function stockViewRows() {
 
 // render ตาราง + stats ตามมุมมอง แล้วค่อยกรองด้วยคำค้น
 function applyStockView() {
-  const rows = stockViewRows();
+  let rows = stockViewRows();
+  // กรองตามหมวดหมู่ที่เลือก (มีผลต่อสถิติด้านบนด้วย)
+  const cat = $('#stock-cat-filter').val() || '__all__';
+  if (cat !== '__all__') rows = rows.filter(s => String(s.category || '').trim() === cat);
   const total = rows.length;
   const low   = rows.filter(s => parseFloat(s.quantity || 0) <= parseFloat(s.min_stock || 0) && parseFloat(s.min_stock || 0) > 0).length;
   const qty   = rows.reduce((sum, s) => sum + parseFloat(s.quantity || 0), 0);
@@ -951,7 +975,7 @@ function applyStockView() {
 
 function renderStockTable(data) {
   if (!data.length) {
-    $('#stock-table-body').html(`<tr><td colspan="${colspanWithBranch(8)}" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>`);
+    $('#stock-table-body').html(`<tr><td colspan="${colspanWithBranch(9)}" class="text-center text-muted py-4">ไม่พบข้อมูล</td></tr>`);
     return;
   }
   $('#stock-table-body').html(data.map(s => {
@@ -984,6 +1008,7 @@ function renderStockTable(data) {
     return `<tr ${isLow ? 'class="table-warning"' : ''}>
       <td><span class="fw-semibold">${s.product_code || '-'}</span></td>
       <td>${s.product_name || s.product_id}</td>
+      <td>${s.category ? `<span class="badge bg-secondary fw-normal">${s.category}</span>` : '-'}</td>
       <td class="text-center fw-bold ${isLow ? 'text-danger' : ''}">${Fmt.number(qty)}</td>
       <td class="text-center">${s.unit || '-'}</td>
       <td class="text-end">${Fmt.currency(s.cost_price)}</td>
@@ -1205,15 +1230,17 @@ async function loadBestSellers() {
     renderBestSellers();
   });
   $('#bs-date, #bs-month, #bs-year').on('change', renderBestSellers);
+  $('#bs-cat-filter').on('change', renderBestSellers);
 
   $('#bs-grid').html(`<div class="text-center text-muted py-5 w-100"><div class="spinner-border spinner-border-sm text-primary me-2"></div>กำลังโหลด...</div>`);
   try {
-    const [wRes, pRes] = await Promise.all([API.getWithdrawals(), API.getProducts()]);
+    const [wRes, pRes] = await Promise.all([API.getWithdrawals(), API.getProducts(), ensureCategoriesLoaded()]);
     App.withdrawals = (wRes && wRes.success) ? (wRes.data || []) : [];
     App.products    = (pRes && pRes.success) ? (pRes.data || []) : [];
   } catch (e) {
     showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger');
   }
+  populateCategoryFilter('#bs-cat-filter');
   renderBestSellers();
 }
 
@@ -1221,8 +1248,9 @@ function renderBestSellers() {
   // map product_id → code/ชื่อ/ราคาขาย (ไว้รวมสินค้าเดียวกันข้ามสาขาด้วย code|ชื่อ และคิดมูลค่าขาย)
   const pmap = {};
   (App.products || []).forEach(p => {
-    pmap[String(p.id)] = { code: String(p.code || '').trim(), name: p.name, selling: parseFloat(p.selling_price || 0) };
+    pmap[String(p.id)] = { code: String(p.code || '').trim(), name: p.name, selling: parseFloat(p.selling_price || 0), category: String(p.category || '').trim() };
   });
+  const catFilter = $('#bs-cat-filter').val() || '__all__';
 
   // ตัวกรองช่วงเวลาตามโหมด
   let matchPeriod;
@@ -1249,10 +1277,12 @@ function renderBestSellers() {
       const pm   = pmap[String(it.product_id)] || {};
       const code = pm.code || '';
       const name = it.product_name || pm.name || it.product_id;
+      const category = pm.category || '';
+      if (catFilter !== '__all__' && category !== catFilter) return; // กรองตามหมวดที่เลือก
       const key  = (code ? code.toLowerCase() : '') || String(name).trim().toLowerCase();
       const selling = pm.selling || parseFloat(it.unit_price || 0);
       const value   = selling * qty;
-      if (!agg[key]) agg[key] = { name, code, qty: 0, value: 0, orders: 0 };
+      if (!agg[key]) agg[key] = { name, code, category, qty: 0, value: 0, orders: 0 };
       agg[key].qty    += qty;
       agg[key].value  += value;
       agg[key].orders += 1;
@@ -1281,10 +1311,11 @@ function renderBestSellers() {
     const rankCls = rank <= 3 ? `rank-${rank}` : '';
     const medal   = rank <= 3 ? `<span class="bs-medal">${medals[rank - 1]}</span>` : '';
     const pct     = Math.max(5, Math.round(r.qty / maxQty * 100));
+    const catTag = r.category ? `<span class="badge bg-secondary fw-normal ms-1">${r.category}</span>` : '';
     return `<div class="bs-card ${rankCls}">
       <div class="bs-rank">#${rank}</div>
       <div class="bs-name">${medal}${r.name}</div>
-      <div class="bs-code">${r.code || '&nbsp;'}</div>
+      <div class="bs-code">${r.code || '&nbsp;'}${catTag}</div>
       <div class="bs-qty">${Fmt.number(r.qty)} <small>${t('bs_unit_sold')}</small></div>
       <div class="bs-bar"><span style="width:${pct}%"></span></div>
       <div class="bs-value"><i class="fas fa-wallet me-1"></i>${Fmt.currency(r.value)}</div>
@@ -1299,6 +1330,13 @@ $(document).on('change', '#stock-branch-filter', function () {
   stockView = $(this).val();
   applyStockView();
 });
+
+// ตัวกรองหมวดหมู่ในหน้าสต็อค
+$(document).on('change', '#stock-cat-filter', function () { applyStockView(); });
+
+// ตัวกรองในหน้าจัดการสินค้า (คำค้น + หมวดหมู่)
+$('#prod-search').on('input', function () { applyProductsView(); });
+$(document).on('change', '#prod-cat-filter', function () { applyProductsView(); });
 
 // ============================================================
 // SECTION: WITHDRAWAL (ขายสินค้า)
@@ -2656,7 +2694,7 @@ async function generateReport() {
     // Profit calculation
     // สร้าง map product_id → selling_price จาก App.products
     const priceMap = {};
-    App.products.forEach(p => { priceMap[p.id] = { selling: parseFloat(p.selling_price || 0), name: p.name }; });
+    App.products.forEach(p => { priceMap[p.id] = { selling: parseFloat(p.selling_price || 0), name: p.name, category: String(p.category || '').trim() }; });
 
     // รวมยอดกำไรต่อสินค้า
     const profitByProduct = {};
@@ -2721,6 +2759,37 @@ async function generateReport() {
       </tr>`);
     } else {
       $('#rpt-profit-body').html('<tr><td colspan="8" class="text-center text-muted">ไม่มีข้อมูลการขายในเดือนนี้</td></tr>');
+    }
+
+    // Profit-by-category summary — จัดกลุ่มกำไรรายสินค้าตามหมวดหมู่
+    const noCatLabel = (typeof t === 'function') ? t('opt_no_category') : '— ไม่ระบุหมวดหมู่ —';
+    const catAgg = {};
+    Object.keys(profitByProduct).forEach(pid => {
+      const r   = profitByProduct[pid];
+      const cat = (priceMap[pid] || {}).category || '';
+      const k   = cat || '__none__';
+      if (!catAgg[k]) catAgg[k] = { category: cat || noCatLabel, qty: 0, revenue: 0, cogs: 0, profit: 0 };
+      catAgg[k].qty     += r.qty;
+      catAgg[k].revenue += r.revenue;
+      catAgg[k].cogs    += r.cogs;
+      catAgg[k].profit  += r.profit;
+    });
+    const catRows = Object.values(catAgg).sort((a, b) => b.profit - a.profit || b.revenue - a.revenue);
+    if (catRows.length) {
+      $('#rpt-cat-body').html(catRows.map(c => {
+        const m   = c.revenue > 0 ? (c.profit / c.revenue * 100) : 0;
+        const cls = c.profit >= 0 ? 'text-success' : 'text-danger';
+        return `<tr>
+          <td><span class="badge bg-secondary fw-normal">${c.category}</span></td>
+          <td class="text-center">${Fmt.number(c.qty)}</td>
+          <td class="text-end">${Fmt.currency(c.revenue)}</td>
+          <td class="text-end">${Fmt.currency(c.cogs)}</td>
+          <td class="text-end fw-bold ${cls}">${Fmt.currency(c.profit)}</td>
+          <td class="text-end ${cls}">${m.toFixed(1)}%</td>
+        </tr>`;
+      }).join(''));
+    } else {
+      $('#rpt-cat-body').html('<tr><td colspan="6" class="text-center text-muted">ไม่มีข้อมูลการขายในเดือนนี้</td></tr>');
     }
 
     // Import table
@@ -3068,12 +3137,26 @@ async function deleteIncomeConfirm(id) {
 // ============================================================
 async function loadProducts() {
   try {
-    const [res] = await Promise.all([API.getProducts(), ensureBranchesLoaded()]);
+    const [res] = await Promise.all([API.getProducts(), ensureBranchesLoaded(), ensureCategoriesLoaded()]);
     if (!res.success) throw new Error(res.message);
     App.products = res.data || [];
-    renderProductsTable(App.products);
+    populateCategoryFilter('#prod-cat-filter');
+    applyProductsView();
     populateProductSelects();
   } catch (e) { showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger'); }
+}
+
+// กรองตารางสินค้าด้วยคำค้น + หมวดหมู่ที่เลือก
+function applyProductsView() {
+  const q   = ($('#prod-search').val() || '').toLowerCase();
+  const cat = $('#prod-cat-filter').val() || '__all__';
+  let rows = App.products || [];
+  if (cat !== '__all__') rows = rows.filter(p => String(p.category || '').trim() === cat);
+  if (q) rows = rows.filter(p =>
+    (p.name || '').toLowerCase().includes(q) ||
+    (p.code || '').toLowerCase().includes(q) ||
+    (p.category || '').toLowerCase().includes(q));
+  renderProductsTable(rows);
 }
 
 function renderProductsTable(data) {
@@ -3100,6 +3183,7 @@ function renderProductsTable(data) {
 function openAddProduct() {
   App.editingId = null;
   $('#product-form')[0].reset();
+  populateCategorySelect('#prod-cat', '');
   $('#modalProductLabel').text('เพิ่มสินค้าใหม่');
   new bootstrap.Modal('#modalProduct').show();
 }
@@ -3108,7 +3192,8 @@ function openEditProduct(id) {
   const p = App.products.find(x => x.id === id);
   if (!p) return;
   App.editingId = id;
-  $('#prod-code').val(p.code); $('#prod-name').val(p.name); $('#prod-cat').val(p.category);
+  populateCategorySelect('#prod-cat', p.category);
+  $('#prod-code').val(p.code); $('#prod-name').val(p.name);
   $('#prod-unit').val(p.unit); $('#prod-cost').val(p.cost_price); $('#prod-sell').val(p.selling_price);
   $('#prod-min').val(p.min_stock); $('#prod-notes').val(p.notes);
   $('#modalProductLabel').text('แก้ไขสินค้า');
@@ -3140,6 +3225,133 @@ async function deleteProductConfirm(id) {
     try {
       const res = await API.deleteProduct(id);
       if (res.success) { showToast('ลบสำเร็จ', 'success'); loadProducts(); }
+      else throw new Error(res.message);
+    } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
+  });
+}
+
+// ============================================================
+// SECTION: CATEGORIES (หมวดหมู่สินค้า — ใช้ร่วมทุกหน้า)
+// ============================================================
+
+// โหลดรายชื่อหมวดหมู่ครั้งเดียวแล้ว cache ไว้ใน App.categories (ใช้เติม dropdown ในหลายหน้า)
+async function ensureCategoriesLoaded() {
+  if (App.categories && App.categories.length) return;
+  try { const res = await API.getCategories(); if (res.success) App.categories = res.data || []; } catch (_) {}
+}
+
+// รวมชื่อหมวดที่ใช้กรอง = หมวดที่จัดการไว้ (active) ∪ หมวดที่ปรากฏจริงในรายการสินค้า (กันข้อมูลเก่าหาย)
+function collectCategoryNames() {
+  const set = new Set();
+  (App.categories || []).forEach(c => { const n = String(c.name || '').trim(); if (n) set.add(n); });
+  (App.products   || []).forEach(p => { const n = String(p.category || '').trim(); if (n) set.add(n); });
+  return Array.from(set).sort((a, b) => a.localeCompare(b, 'th'));
+}
+
+// เติม dropdown ตัวกรองหมวด: option แรก = "ทุกหมวดหมู่" แล้วตามด้วยชื่อหมวด (คงค่าที่เลือกอยู่ไว้)
+function populateCategoryFilter(selector) {
+  const $sel = $(selector);
+  if (!$sel.length) return;
+  const cur = $sel.val();
+  const allLabel = (typeof t === 'function') ? t('filter_all_categories') : 'ทุกหมวดหมู่';
+  let opts = `<option value="__all__">${allLabel}</option>`;
+  collectCategoryNames().forEach(n => { opts += `<option value="${escAttr(n)}">${n}</option>`; });
+  $sel.html(opts).val(cur && $sel.find(`option[value="${escSel(cur)}"]`).length ? cur : '__all__');
+}
+
+// เติม <select> เลือกหมวดในฟอร์มสินค้า (รวมค่าปัจจุบันแม้ไม่อยู่ในลิสต์ — กันข้อมูลเก่า)
+function populateCategorySelect(selector, selectedVal) {
+  const $sel = $(selector);
+  if (!$sel.length) return;
+  const noneLabel = (typeof t === 'function') ? t('opt_no_category') : '— ไม่ระบุหมวดหมู่ —';
+  const names = collectCategoryNames();
+  const sel = String(selectedVal || '').trim();
+  if (sel && names.indexOf(sel) === -1) names.push(sel); // ค่าเก่าที่ไม่อยู่ในลิสต์
+  let opts = `<option value="">${noneLabel}</option>`;
+  names.forEach(n => { opts += `<option value="${escAttr(n)}">${n}</option>`; });
+  $sel.html(opts).val(sel);
+}
+
+// helper escape สำหรับใส่ใน attribute / jQuery selector
+function escAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+function escSel(s)  { return String(s).replace(/(["\\\]])/g, '\\$1'); }
+
+async function loadCategories() {
+  try {
+    const [cRes, pRes] = await Promise.all([API.getCategories(), API.getProducts()]);
+    if (!cRes.success) throw new Error(cRes.message);
+    App.categories = cRes.data || [];
+    App.products   = (pRes && pRes.success) ? (pRes.data || []) : App.products;
+    renderCategoriesTable(App.categories);
+  } catch (e) { showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger'); }
+}
+
+function renderCategoriesTable(data) {
+  if (!data.length) {
+    $('#categories-table-body').html('<tr><td colspan="4" class="text-center text-muted py-4">ยังไม่มีหมวดหมู่ — กด "เพิ่มหมวดหมู่"</td></tr>');
+    return;
+  }
+  // นับจำนวนสินค้าต่อหมวด (จับคู่ด้วยชื่อหมวด)
+  const counts = {};
+  (App.products || []).forEach(p => {
+    const n = String(p.category || '').trim();
+    if (n) counts[n] = (counts[n] || 0) + 1;
+  });
+  $('#categories-table-body').html(data.map(c => {
+    const name = String(c.name || '').trim();
+    const cnt  = counts[name] || 0;
+    return `<tr>
+      <td><span class="badge bg-secondary fw-normal">${name || '-'}</span></td>
+      <td class="text-muted">${c.description || '-'}</td>
+      <td class="text-center">${Fmt.number(cnt)}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary me-1" onclick="openEditCategory('${c.id}')"><i class="fas fa-edit"></i></button>
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteCategoryConfirm('${c.id}')"><i class="fas fa-trash"></i></button>
+      </td>
+    </tr>`;
+  }).join(''));
+}
+
+function openAddCategory() {
+  App.editingId = null;
+  $('#category-form')[0].reset();
+  $('#modalCategoryLabel').html('<i class="fas fa-layer-group me-2"></i>เพิ่มหมวดหมู่');
+  new bootstrap.Modal('#modalCategory').show();
+}
+
+function openEditCategory(id) {
+  const c = (App.categories || []).find(x => x.id === id);
+  if (!c) return;
+  App.editingId = id;
+  $('#cat-name').val(c.name);
+  $('#cat-desc').val(c.description);
+  $('#modalCategoryLabel').html('<i class="fas fa-layer-group me-2"></i>แก้ไขหมวดหมู่');
+  new bootstrap.Modal('#modalCategory').show();
+}
+
+async function saveCategory() {
+  const name = $('#cat-name').val().trim();
+  if (!name) { showToast('กรุณากรอกชื่อหมวดหมู่', 'warning'); return; }
+  const data = { name, description: $('#cat-desc').val() };
+  if (App.editingId) data.id = App.editingId;
+
+  $('#btn-save-cat').prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-2"></span>บันทึก...');
+  try {
+    const res = App.editingId ? await API.updateCategory(data) : await API.addCategory(data);
+    if (res.success) {
+      showToast(App.editingId ? 'อัพเดทสำเร็จ!' : 'เพิ่มหมวดหมู่สำเร็จ!', 'success');
+      bootstrap.Modal.getOrCreateInstance('#modalCategory').hide();
+      loadCategories();
+    } else throw new Error(res.message);
+  } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
+  $('#btn-save-cat').prop('disabled', false).text('บันทึก');
+}
+
+async function deleteCategoryConfirm(id) {
+  confirmAction('ต้องการลบหมวดหมู่นี้? (สินค้าที่อยู่ในหมวดนี้จะยังคงป้ายชื่อหมวดเดิมไว้)', async () => {
+    try {
+      const res = await API.deleteCategory(id);
+      if (res.success) { showToast('ลบสำเร็จ', 'success'); loadCategories(); }
       else throw new Error(res.message);
     } catch (e) { showToast('เกิดข้อผิดพลาด: ' + e.message, 'danger'); }
   });

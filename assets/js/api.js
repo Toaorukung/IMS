@@ -39,6 +39,12 @@ const API = (() => {
     updateProduct: (d)    => post({ action: 'updateProduct', ...d }),
     deleteProduct: (id)   => post({ action: 'deleteProduct', id }),
 
+    // Categories (หมวดหมู่สินค้า — global)
+    getCategories:    ()   => get('getCategories'),
+    addCategory:      (d)  => post({ action: 'addCategory',    ...d }),
+    updateCategory:   (d)  => post({ action: 'updateCategory', ...d }),
+    deleteCategory:   (id) => post({ action: 'deleteCategory', id }),
+
     // Stock
     getStock: () => get('getStock', { branch_id: Auth.getBranchId() }),
 

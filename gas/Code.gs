@@ -24,11 +24,12 @@ function setupAllSheets() {
     'Expenses':    ['id','date','category','description','amount','branch_id','created_at','created_by'],
     'ExpenseCategories': ['name'],
     'Income':      ['id','date','category','description','amount','branch_id','created_at','created_by'],
-    'IncomeCategories': ['name']
+    'IncomeCategories': ['name'],
+    'Categories':  ['id','name','description','status','created_at']
   };
 
   // Sheets ที่ไม่ต้องมี branch_id
-  const NO_BRANCH_ID = new Set(['Tokens', 'ExpenseCategories', 'IncomeCategories']);
+  const NO_BRANCH_ID = new Set(['Tokens', 'ExpenseCategories', 'IncomeCategories', 'Categories']);
 
   const log = [];
 
@@ -119,6 +120,10 @@ function processRequest(action, params, body) {
       case 'addProduct':             return addProduct(p);
       case 'updateProduct':          return withLock(function() { return updateProduct(p); });
       case 'deleteProduct':          return deleteProduct(p);
+      case 'getCategories':          return getCategories(p);
+      case 'addCategory':            return withLock(function() { return addCategory(p); });
+      case 'updateCategory':         return withLock(function() { return updateCategory(p); });
+      case 'deleteCategory':         return deleteCategory(p);
       case 'getStock':               return getStock(p);
       case 'getImports':             return getImports(p);
       case 'addImport':              return withLock(function() { return addImport(p); });
@@ -396,6 +401,87 @@ function deleteProduct(data) {
   if (!sheet) return { success: false };
   const ok = updateRow(sheet, data.id, { status: 'inactive' });
   return { success: ok, message: ok ? 'ลบสำเร็จ' : 'ไม่พบสินค้า' };
+}
+
+// ---------- Categories (หมวดหมู่สินค้า — global, ใช้ร่วมทุกสาขา) ----------
+// Products.category เก็บเป็น "ชื่อหมวด" (string) — sheet นี้คือ master list ของชื่อหมวด
+function getCategories(p) {
+  var auth = requireAuth(p);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Categories');
+  if (!sheet) return { success: true, data: [] };
+  var data = sheetToObjects(sheet).filter(function(c) { return c.status !== 'inactive'; });
+  return { success: true, data: data };
+}
+
+function addCategory(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Categories');
+  if (!sheet) return { success: false, message: 'ไม่พบชีท Categories กรุณารัน setupAllSheets() ก่อน' };
+  var name = String(data.name || '').trim();
+  if (!name) return { success: false, message: 'กรุณากรอกชื่อหมวดหมู่' };
+  // กันชื่อซ้ำ (case-insensitive) เฉพาะหมวดที่ยัง active
+  var dup = sheetToObjects(sheet).some(function(c) {
+    return c.status !== 'inactive' && String(c.name || '').trim().toLowerCase() === name.toLowerCase();
+  });
+  if (dup) return { success: false, message: 'มีหมวดหมู่ชื่อนี้อยู่แล้ว' };
+  var id = uid('CAT');
+  sheet.appendRow([id, name, data.description || '', 'active', now()]);
+  return { success: true, id: id, message: 'เพิ่มหมวดหมู่สำเร็จ' };
+}
+
+function updateCategory(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Categories');
+  if (!sheet) return { success: false };
+  var rows = sheetToObjects(sheet);
+  var existing = rows.find(function(c) { return c.id === data.id; });
+  if (!existing) return { success: false, message: 'ไม่พบหมวดหมู่' };
+  var newName = String(data.name || '').trim();
+  if (!newName) return { success: false, message: 'กรุณากรอกชื่อหมวดหมู่' };
+  var oldName = String(existing.name || '').trim();
+  // กันชื่อซ้ำกับหมวดอื่น
+  var dup = rows.some(function(c) {
+    return c.id !== data.id && c.status !== 'inactive' &&
+           String(c.name || '').trim().toLowerCase() === newName.toLowerCase();
+  });
+  if (dup) return { success: false, message: 'มีหมวดหมู่ชื่อนี้อยู่แล้ว' };
+  var ok = updateRow(sheet, data.id, { name: newName, description: data.description });
+  // เปลี่ยนชื่อหมวด → cascade ไปอัพเดท Products.category ทุกตัวที่ใช้ชื่อเดิม
+  if (ok && newName !== oldName) renameCategoryOnProducts(oldName, newName);
+  return { success: ok, message: ok ? 'อัพเดทสำเร็จ' : 'ไม่พบหมวดหมู่' };
+}
+
+function deleteCategory(data) {
+  var auth = requireAuth(data, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var sheet = getSheet('Categories');
+  if (!sheet) return { success: false };
+  // soft delete — สินค้าที่ผูกหมวดนี้ยังคงป้ายชื่อหมวดเดิมไว้ (เป็น text)
+  var ok = updateRow(sheet, data.id, { status: 'inactive' });
+  return { success: ok, message: ok ? 'ลบหมวดหมู่สำเร็จ' : 'ไม่พบหมวดหมู่' };
+}
+
+// อัพเดทค่า category ของ Products ทุก row ที่ตรงกับชื่อเดิม (ใช้ตอน rename หมวด)
+function renameCategoryOnProducts(oldName, newName) {
+  if (!oldName) return;
+  var sheet = getSheet('Products');
+  if (!sheet) return;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function(h) { return String(h).trim(); });
+  var catCol = headers.indexOf('category');
+  if (catCol === -1) return;
+  var range  = sheet.getRange(2, catCol + 1, lastRow - 1, 1);
+  var values = range.getValues();
+  var changed = false;
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === String(oldName).trim()) { values[i][0] = newName; changed = true; }
+  }
+  if (changed) range.setValues(values);
 }
 
 // ---------- Stock (FIFO Lot-based) ----------

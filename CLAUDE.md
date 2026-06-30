@@ -26,6 +26,7 @@
 | `/dashboard/recipients/` | `recipients` | `loadRecipients()` |
 | `/dashboard/report/` | `report` | `initReports()` |
 | `/dashboard/products/` | `products` | `loadProducts()` |
+| `/dashboard/categories/` | `categories` | `loadCategories()` |
 | `/dashboard/users/` | `users` | inline script |
 
 Page switch ใน `app.js`: `switch(page)` ที่ `document.ready`
@@ -58,6 +59,7 @@ Imports:     id, order_date, supplier, items, yuan_amount, exchange_rate, base_c
 Withdrawals: id, withdrawal_date, recipient_id, recipient_name, department, items, total_value, type, notes, status, created_by, created_at, branch_id, doc_no, deposit
 Recipients:  id, name, department, position, phone, email, notes, status, created_at, branch_id, tax_id, address
 Transfers:   id, transfer_date, product_id, product_name, product_code, quantity, from_branch_id, to_branch_id, transport_cost, labor_cost, unit_cost, dest_unit_cost, total_value, notes, created_by, created_at
+Categories:  id, name, description, status, created_at
 ```
 
 - `items` ใน Imports และ Withdrawals เก็บเป็น **JSON string** ใน cell
@@ -87,6 +89,21 @@ Transfers:   id, transfer_date, product_id, product_name, product_code, quantity
   5. append แถวประวัติใน sheet `Transfers`
 - **ต้องรัน `setupAllSheets()` ใหม่** เพื่อสร้าง sheet `Transfers`
 - preview ต้นทุนปลายทางในโมดอลเป็น **ค่าประมาณ** (ใช้ `cost_price` weighted-avg จาก getStock); ค่าจริงคำนวณ FIFO ฝั่ง server ตอนบันทึก
+
+---
+
+## Category System (หมวดหมู่สินค้า)
+
+- **หมวดหมู่เป็น master list แยก** (sheet `Categories`, **global ไม่มี branch_id** — ใช้ร่วมทุกสาขา). จัดการที่หน้า `/dashboard/categories/` (admin + superadmin; **staff เข้าไม่ได้**)
+- `Products.category` เก็บเป็น **ชื่อหมวด (string)** ไม่ใช่ id → backward-compatible กับข้อมูล free-text เดิม. sheet `Categories` เป็นแค่ controlled vocabulary ของ dropdown
+- หน้า products: ช่อง `#prod-cat` เปลี่ยนจาก text input → `<select>` เติมจาก `App.categories` (`populateCategorySelect` ยังคงค่าเก่าที่ไม่อยู่ในลิสต์ไว้เสมอ)
+- **rename หมวด** (`updateCategory`) → cascade อัพเดท `Products.category` ทุก row ที่ใช้ชื่อเดิม (`renameCategoryOnProducts`). **delete** = soft-delete (status=inactive); สินค้ายังคงป้ายชื่อหมวดเดิมไว้
+- ตัวกรอง/แสดงผลตามหมวด (frontend ล้วน):
+  - **products / stock**: dropdown `#prod-cat-filter` / `#stock-cat-filter` + คอลัมน์หมวดหมู่. Stock sheet ไม่มี category → map จาก `App.products` ด้วย code/ชื่อ (`buildProductCatMap`) แล้วแปะใน `aggregateStockByProduct`
+  - **bestsellers**: dropdown `#bs-cat-filter` (category มาจาก `pmap` ของ product) + badge บนการ์ด
+  - **report**: ตาราง "สรุปยอดขายตามหมวดหมู่" (`#rpt-cat-body`) จัดกลุ่ม profitByProduct ตาม category ของสินค้า
+- `collectCategoryNames()` = หมวดที่ active ∪ หมวดที่ปรากฏจริงใน products (กันข้อมูลเก่าหายจาก filter); `populateCategoryFilter(sel)` ใส่ option แรก `__all__`
+- **ต้องรัน `setupAllSheets()` ใหม่** เพื่อสร้าง sheet `Categories`
 
 ---
 
@@ -132,6 +149,7 @@ PO สร้าง (purchase modal)
 | `getStockImportHistory` | filter Imports.items → history ต่อ product |
 | `updateImportStatus` | อัพเดท status + freight/costs/total; รับเข้า `receive_branch_id` (สาขาที่รับ) |
 | `getTransfers` / `addTransfer` | โยกของข้ามสาขา (ดู Transfer System) |
+| `getCategories` / `addCategory` / `updateCategory` / `deleteCategory` | CRUD หมวดหมู่ (global). `updateCategory` cascade rename ไป `Products.category` (`renameCategoryOnProducts`); `deleteCategory` = soft-delete |
 
 GAS endpoint เดียว: `doGet` (action ใน query string) / `doPost` (action ใน JSON body)
 
@@ -152,7 +170,7 @@ GAS endpoint เดียว: `doGet` (action ใน query string) / `doPost` (a
 
 ```js
 App = {
-  user, products[], stock[], imports[], withdrawals[], recipients[], currentSection, editingId
+  user, products[], stock[], imports[], withdrawals[], recipients[], branches[], transfers[], categories[], currentSection, editingId
 }
 ```
 
@@ -174,6 +192,7 @@ App = {
 ```js
 API.getProducts()
 API.addProduct(d) / updateProduct(d) / deleteProduct(id)
+API.getCategories() / addCategory(d) / updateCategory(d) / deleteCategory(id)
 API.getStock()
 API.getImports() / addImport(d) / updateImportStatus(id, status, import_costs, freight_cost)
 API.getWithdrawals() / addWithdrawal(d) / updateWithdrawalStatus(id, status) / updateWithdrawal(d) / partialReturn(d)

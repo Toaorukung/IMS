@@ -32,6 +32,13 @@
     <button class="btn btn-primary" data-i18n="btn_add_product" onclick="openAddProduct()"><i class="fas fa-plus me-1"></i>เพิ่มสินค้า</button>
   </div>
   <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title" data-i18n="products_list_title">รายการสินค้า</div>
+      <div class="d-flex gap-2">
+        <select id="prod-cat-filter" class="form-select form-select-sm" style="width:220px;"></select>
+        <input type="text" id="prod-search" class="form-control form-control-sm" data-i18n-placeholder="ph_search_product" placeholder="ค้นหาสินค้า..." style="width:220px;">
+      </div>
+    </div>
     <div class="table-responsive">
       <table class="table">
         <thead><tr><th data-i18n="th_id">รหัส</th><th data-i18n="th_product_name">ชื่อสินค้า</th><th data-i18n="th_category">หมวดหมู่</th><th class="text-center" data-i18n="th_unit">หน่วย</th><th class="text-end" data-i18n="th_cost">ต้นทุน</th><th class="text-end" data-i18n="th_sell_price">ราคาขาย</th><th class="text-center" data-i18n="th_min_stock">สต็อคขั้นต่ำ</th><th class="col-branch" data-i18n="th_branch">สาขา</th><th data-i18n="th_manage">จัดการ</th></tr></thead>
@@ -68,8 +75,8 @@
               <input type="text" class="form-control" id="prod-name" placeholder="ชื่อสินค้า">
             </div>
             <div class="col-md-4">
-              <label class="form-label">หมวดหมู่</label>
-              <input type="text" class="form-control" id="prod-cat" placeholder="หมวดหมู่">
+              <label class="form-label" data-i18n="lbl_category">หมวดหมู่</label>
+              <select class="form-select" id="prod-cat"></select>
             </div>
             <div class="col-md-4">
               <label class="form-label">หน่วย</label>
