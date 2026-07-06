@@ -3006,10 +3006,11 @@ async function loadIncome() {
   const month = $('#inc-filter-month').val();
   const year  = $('#inc-filter-year').val();
   try {
-    const [incRes, catRes, sumRes] = await Promise.all([
+    const [incRes, catRes, sumRes, walletRes] = await Promise.all([
       API.getIncome(month, year),
       App._incomeCategories ? Promise.resolve({ success: true, data: App._incomeCategories }) : API.getIncomeCategories(),
       API.getIncomeSummary(month, year),
+      API.getWallets(),
       ensureBranchesLoaded()
     ]);
     if (!incRes.success) throw new Error(incRes.message);
@@ -3020,7 +3021,42 @@ async function loadIncome() {
     }
     renderIncomeTable(App._income);
     if (sumRes.success) renderIncomeSummary(sumRes.data);
+    if (walletRes && walletRes.success) renderWallets(walletRes.data);
   } catch (e) { showToast('โหลดข้อมูลล้มเหลว: ' + e.message, 'danger'); }
+}
+
+function renderWallets(d) {
+  const fund = d.fund || {}, wallets = d.wallets || [];
+  $('#fund-contrib').text(Fmt.currency(fund.contributions || 0));
+  $('#fund-sales').text(Fmt.currency(fund.salesRevenue || 0));
+  $('#fund-out').text(Fmt.currency((fund.importCost || 0) + (fund.expenses || 0)));
+  $('#fund-imports').text(Fmt.currency(fund.importCost || 0));
+  $('#fund-expenses').text(Fmt.currency(fund.expenses || 0));
+  const net = fund.net || 0;
+  $('#fund-net').text(Fmt.currency(net))
+    .removeClass('text-success text-danger')
+    .addClass(net < 0 ? 'text-danger' : 'text-success');
+  $('#wallet-fund-note').text(net < 0 ? 'กองกลางกำลังขาดทุน' : 'กองกลางกำไร');
+
+  // เติมชื่อเจ้าของใน datalist ของ modal
+  $('#inc-owner-list').html(wallets.map(w => `<option value="${w.owner}">`).join(''));
+
+  if (!wallets.length) {
+    $('#wallet-table-body').html('<tr><td colspan="5" class="text-center text-muted py-3">ยังไม่มีเงินลงขัน — เพิ่มรายการโดยระบุชื่อเจ้าของ</td></tr>');
+    return;
+  }
+  $('#wallet-table-body').html(wallets.map(w => {
+    const allocCls = (w.allocated || 0) < 0 ? 'text-danger' : 'text-success';
+    const balCls   = (w.balance   || 0) < 0 ? 'text-danger' : '';
+    const sign     = (w.allocated || 0) >= 0 ? '+' : '';
+    return `<tr>
+      <td class="fw-semibold"><i class="fas fa-user-circle text-muted me-1"></i>${w.owner}</td>
+      <td class="text-end">${Fmt.currency(w.contribution)}</td>
+      <td class="text-end text-muted">${((w.share || 0) * 100).toFixed(1)}%</td>
+      <td class="text-end fw-semibold ${allocCls}">${sign}${Fmt.currency(w.allocated)}</td>
+      <td class="text-end fw-bold ${balCls}">${Fmt.currency(w.balance)}</td>
+    </tr>`;
+  }).join(''));
 }
 
 function renderIncomeSummary(d) {
@@ -3052,7 +3088,7 @@ function populateIncomeCategorySelect(categories) {
 
 function renderIncomeTable(data) {
   if (!data.length) {
-    $('#income-table-body').html(`<tr><td colspan="${colspanWithBranch(6)}" class="text-center text-muted py-4">ไม่พบรายการรายรับในเดือนนี้</td></tr>`);
+    $('#income-table-body').html(`<tr><td colspan="${colspanWithBranch(7)}" class="text-center text-muted py-4">ไม่พบรายการรายรับในเดือนนี้</td></tr>`);
     $('#inc-total').text('฿0.00');
     return;
   }
@@ -3060,6 +3096,7 @@ function renderIncomeTable(data) {
   $('#income-table-body').html(data.map(r => `<tr>
     <td>${Fmt.date(r.date)}</td>
     <td><span class="badge bg-success">${r.category || '-'}</span></td>
+    <td class="fw-semibold">${r.owner || '-'}</td>
     <td>${r.description || '-'}</td>
     <td class="text-end fw-semibold text-success">${Fmt.currency(r.amount)}</td>
     <td class="text-muted small">${r.created_by || '-'}</td>
@@ -3094,6 +3131,7 @@ function openEditIncome(id) {
   populateIncomeCategorySelect(App._incomeCategories || []);
   $('#inc-date').val(String(r.date).split('T')[0]);
   $('#inc-category').val(r.category || '');
+  $('#inc-owner').val(r.owner || '');
   $('#inc-description').val(r.description || '');
   $('#inc-amount').val(r.amount || '');
   new bootstrap.Modal('#modalIncome').show();
@@ -3102,14 +3140,15 @@ function openEditIncome(id) {
 async function saveIncome() {
   const date        = $('#inc-date').val();
   const category    = $('#inc-category').val();
+  const owner       = $('#inc-owner').val().trim();
   const description = $('#inc-description').val().trim();
   const amount      = parseFloat($('#inc-amount').val());
 
-  if (!date || !category || isNaN(amount) || amount <= 0) {
-    showToast('กรุณากรอกวันที่ หมวดหมู่ และจำนวนเงิน', 'warning'); return;
+  if (!date || !category || !owner || isNaN(amount) || amount <= 0) {
+    showToast('กรุณากรอกวันที่ หมวดหมู่ เจ้าของกระเป๋า และจำนวนเงิน', 'warning'); return;
   }
 
-  const payload = { date, category, description, amount };
+  const payload = { date, category, owner, description, amount };
   await withBtnLoading('#btn-save-income',
     '<i class="fas fa-save me-1"></i>บันทึก', async () => {
     const res = App.editingId

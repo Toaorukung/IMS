@@ -64,6 +64,61 @@
     </div>
   </div>
 
+  <!-- Wallets: กระเป๋าเงินลงขัน + แบ่งกำไร/ขาดทุน -->
+  <div class="panel mb-3">
+    <div class="panel-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div class="fw-bold"><i class="fas fa-wallet me-2 text-primary"></i>กระเป๋าเงินลงขัน (แบ่งกำไร/ขาดทุนตามสัดส่วน)</div>
+      <div class="small text-muted" id="wallet-fund-note"></div>
+    </div>
+    <div class="panel-body">
+      <!-- Fund breakdown -->
+      <div class="row g-2 mb-3" id="wallet-fund-cards">
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-2 h-100">
+            <div class="text-muted small">เงินลงขันรวม</div>
+            <div class="fw-bold" id="fund-contrib">฿0.00</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-2 h-100">
+            <div class="text-muted small"><i class="fas fa-arrow-down text-success me-1"></i>ยอดขาย (เงินเข้า)</div>
+            <div class="fw-bold text-success" id="fund-sales">฿0.00</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-2 h-100">
+            <div class="text-muted small"><i class="fas fa-arrow-up text-danger me-1"></i>ต้นทุน+ค่าใช้จ่าย (เงินออก)</div>
+            <div class="fw-bold text-danger" id="fund-out">฿0.00</div>
+            <div class="text-muted" style="font-size:.72rem">นำเข้า <span id="fund-imports">฿0</span> · ค่าใช้จ่าย <span id="fund-expenses">฿0</span></div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-2 h-100">
+            <div class="text-muted small"><i class="fas fa-chart-line me-1"></i>กำไร/ขาดทุนสุทธิ</div>
+            <div class="fw-bold" id="fund-net">฿0.00</div>
+          </div>
+        </div>
+      </div>
+      <!-- Per-wallet table -->
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>เจ้าของกระเป๋า</th>
+              <th class="text-end">เงินที่ลง (฿)</th>
+              <th class="text-end">สัดส่วน</th>
+              <th class="text-end">กำไร/ขาดทุนที่แบ่ง (฿)</th>
+              <th class="text-end">ยอดคงเหลือ (฿)</th>
+            </tr>
+          </thead>
+          <tbody id="wallet-table-body">
+            <tr><td colspan="5" class="text-center text-muted py-3">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <div class="panel mb-3">
     <div class="panel-body">
       <div class="row g-3 align-items-end">
@@ -96,6 +151,7 @@
           <tr>
             <th>วันที่</th>
             <th>หมวดหมู่</th>
+            <th>เจ้าของกระเป๋า</th>
             <th>รายละเอียด</th>
             <th class="text-end">จำนวนเงิน (฿)</th>
             <th>บันทึกโดย</th>
@@ -108,7 +164,7 @@
         </tbody>
         <tfoot>
           <tr class="table-light fw-bold">
-            <td colspan="3" class="text-end">รวมทั้งหมด</td>
+            <td colspan="4" class="text-end">รวมทั้งหมด</td>
             <td class="text-end" id="inc-total">฿0.00</td>
             <td></td>
             <td class="col-branch"></td>
@@ -138,6 +194,12 @@
           <div class="mb-3">
             <label class="form-label">วันที่ <span class="text-danger">*</span></label>
             <input type="date" class="form-control" id="inc-date">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">เจ้าของกระเป๋า / ผู้ลงเงิน <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="inc-owner" list="inc-owner-list" placeholder="เช่น นาย A">
+            <datalist id="inc-owner-list"></datalist>
+            <div class="form-text text-muted">ชื่อเดียวกันจะถูกรวมเป็นกระเป๋าเดียว (ลงเงินได้หลายครั้ง)</div>
           </div>
           <div class="mb-3">
             <label class="form-label">หมวดหมู่ <span class="text-danger">*</span></label>

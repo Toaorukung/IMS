@@ -23,7 +23,7 @@ function setupAllSheets() {
     'Transfers':   ['id','transfer_date','product_id','product_name','product_code','quantity','from_branch_id','to_branch_id','transport_cost','labor_cost','unit_cost','dest_unit_cost','total_value','notes','created_by','created_at','batch_id','status'],
     'Expenses':    ['id','date','category','description','amount','branch_id','created_at','created_by'],
     'ExpenseCategories': ['name'],
-    'Income':      ['id','date','category','description','amount','branch_id','created_at','created_by'],
+    'Income':      ['id','date','category','description','amount','branch_id','created_at','created_by','owner'],
     'IncomeCategories': ['name'],
     'Categories':  ['id','name','description','status','created_at']
   };
@@ -164,6 +164,7 @@ function processRequest(action, params, body) {
       case 'deleteIncome':           return deleteIncome(p);
       case 'getIncomeCategories':    return getIncomeCategories(p);
       case 'getIncomeSummary':       return getIncomeSummary(p);
+      case 'getWallets':             return getWallets(p);
       default: return { success: false, message: 'Unknown action: ' + action };
     }
   } catch (err) {
@@ -1847,7 +1848,8 @@ function addIncome(data) {
   var id       = uid('INC');
   var branchId = data.branch_id || auth.user.branch_id || '';
   sheet.appendRow([id, data.date || now().split('T')[0], data.category || '',
-    data.description || '', parseFloat(data.amount) || 0, branchId, now(), auth.user.username || '']);
+    data.description || '', parseFloat(data.amount) || 0, branchId, now(), auth.user.username || '',
+    String(data.owner || '').trim()]);
   return { success: true, id, message: '\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01\u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08' };
 }
 
@@ -1856,12 +1858,14 @@ function updateIncome(data) {
   if (!auth.ok) return { success: false, message: auth.message };
   var sheet = getSheet('Income');
   if (!sheet) return { success: false };
-  var ok = updateRow(sheet, data.id, {
+  var updates = {
     date:        data.date,
     category:    data.category,
     description: data.description,
     amount:      parseFloat(data.amount) || 0
-  });
+  };
+  if (data.owner !== undefined) updates.owner = String(data.owner || '').trim();
+  var ok = updateRow(sheet, data.id, updates);
   return { success: ok, message: ok ? '\u0e2d\u0e31\u0e1e\u0e40\u0e14\u0e17\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08' : '\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23' };
 }
 
@@ -1931,6 +1935,101 @@ function getIncomeSummary(p) {
         income:    inc.monthTotal,
         expenses:  exp.monthTotal,
         remaining: inc.monthTotal - exp.monthTotal
+      }
+    }
+  };
+}
+
+/**
+ * \u0e01\u0e23\u0e30\u0e40\u0e1b\u0e4b\u0e32\u0e40\u0e07\u0e34\u0e19\u0e25\u0e07\u0e02\u0e31\u0e19 (\u0e41\u0e1a\u0e48\u0e07\u0e01\u0e33\u0e44\u0e23/\u0e02\u0e32\u0e14\u0e17\u0e38\u0e19\u0e15\u0e32\u0e21\u0e2a\u0e31\u0e14\u0e2a\u0e48\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19\u0e17\u0e35\u0e48\u0e25\u0e07)
+ * \u0e42\u0e21\u0e40\u0e14\u0e25\u0e01\u0e23\u0e30\u0e41\u0e2a\u0e40\u0e07\u0e34\u0e19\u0e2a\u0e14 (\u0e2a\u0e30\u0e2a\u0e21\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14 \u0e15\u0e48\u0e2d\u0e2a\u0e32\u0e02\u0e32):
+ *   \u0e40\u0e07\u0e34\u0e19\u0e40\u0e02\u0e49\u0e32\u0e01\u0e2d\u0e07\u0e01\u0e25\u0e32\u0e07  = \u0e22\u0e2d\u0e14\u0e02\u0e32\u0e22 (Withdrawals completed: selling_price \u00d7 qty; return = \u0e25\u0e1a\u0e04\u0e37\u0e19)
+ *   \u0e40\u0e07\u0e34\u0e19\u0e2d\u0e2d\u0e01\u0e01\u0e2d\u0e07\u0e01\u0e25\u0e32\u0e07 = \u0e15\u0e49\u0e19\u0e17\u0e38\u0e19\u0e19\u0e33\u0e40\u0e02\u0e49\u0e32 (Imports received total_cost) + \u0e04\u0e48\u0e32\u0e43\u0e0a\u0e49\u0e08\u0e48\u0e32\u0e22 (Expenses)
+ *   \u0e01\u0e33\u0e44\u0e23/\u0e02\u0e32\u0e14\u0e17\u0e38\u0e19\u0e2a\u0e38\u0e17\u0e18\u0e34 = \u0e40\u0e07\u0e34\u0e19\u0e40\u0e02\u0e49\u0e32 \u2212 \u0e40\u0e07\u0e34\u0e19\u0e2d\u0e2d\u0e01 \u2192 \u0e40\u0e09\u0e25\u0e35\u0e48\u0e22\u0e15\u0e32\u0e21\u0e2a\u0e31\u0e14\u0e2a\u0e48\u0e27\u0e19\u0e40\u0e07\u0e34\u0e19\u0e17\u0e35\u0e48\u0e25\u0e07
+ *   \u0e22\u0e2d\u0e14\u0e04\u0e07\u0e40\u0e2b\u0e25\u0e37\u0e2d\u0e01\u0e23\u0e30\u0e40\u0e1b\u0e4b\u0e32 = \u0e40\u0e07\u0e34\u0e19\u0e17\u0e35\u0e48\u0e25\u0e07 + (\u0e2a\u0e31\u0e14\u0e2a\u0e48\u0e27\u0e19 \u00d7 \u0e01\u0e33\u0e44\u0e23\u0e2a\u0e38\u0e17\u0e18\u0e34)
+ */
+function getWallets(p) {
+  var auth = requireAuth(p, ['admin', 'superadmin']);
+  if (!auth.ok) return { success: false, message: auth.message };
+  var branchId = effectiveBranchId(auth.user, (p || {}).branch_id);
+  var role     = auth.user.role;
+
+  // --- \u0e40\u0e07\u0e34\u0e19\u0e25\u0e07\u0e02\u0e31\u0e19\u0e15\u0e48\u0e2d\u0e40\u0e08\u0e49\u0e32\u0e02\u0e2d\u0e07 (\u0e08\u0e32\u0e01 Income \u0e08\u0e31\u0e14\u0e01\u0e25\u0e38\u0e48\u0e21\u0e15\u0e32\u0e21 owner) ---
+  var incSheet = getSheet('Income');
+  var incRows  = incSheet ? filterByBranch(sheetToObjects(incSheet), branchId, role) : [];
+  var walletMap = {};
+  var totalContrib = 0;
+  incRows.forEach(function(r) {
+    var owner = String(r.owner || '').trim() || '(\u0e44\u0e21\u0e48\u0e23\u0e30\u0e1a\u0e38\u0e40\u0e08\u0e49\u0e32\u0e02\u0e2d\u0e07)';
+    var amt   = parseFloat(r.amount) || 0;
+    if (!walletMap[owner]) walletMap[owner] = { owner: owner, contribution: 0, count: 0 };
+    walletMap[owner].contribution += amt;
+    walletMap[owner].count += 1;
+    totalContrib += amt;
+  });
+
+  // --- \u0e04\u0e48\u0e32\u0e43\u0e0a\u0e49\u0e08\u0e48\u0e32\u0e22 (Expenses) ---
+  var expSheet = getSheet('Expenses');
+  var expRows  = expSheet ? filterByBranch(sheetToObjects(expSheet), branchId, role) : [];
+  var totalExpenses = expRows.reduce(function(s, r) { return s + (parseFloat(r.amount) || 0); }, 0);
+
+  // --- \u0e15\u0e49\u0e19\u0e17\u0e38\u0e19\u0e19\u0e33\u0e40\u0e02\u0e49\u0e32 (Imports \u0e17\u0e35\u0e48 received \u0e40\u0e17\u0e48\u0e32\u0e19\u0e31\u0e49\u0e19) ---
+  var impSheet = getSheet('Imports');
+  var impRows  = impSheet ? filterByBranch(sheetToObjects(impSheet), branchId, role) : [];
+  var totalImportCost = impRows.reduce(function(s, r) {
+    return r.status === 'received' ? s + (parseFloat(r.total_cost) || 0) : s;
+  }, 0);
+
+  // --- \u0e22\u0e2d\u0e14\u0e02\u0e32\u0e22 (Withdrawals completed: selling_price \u00d7 qty) ---
+  var prodSheet = getSheet('Products');
+  var prodRows  = prodSheet ? filterByBranch(sheetToObjects(prodSheet), branchId, role) : [];
+  var sellMap = {};
+  prodRows.forEach(function(pp) { sellMap[String(pp.id)] = parseFloat(pp.selling_price) || 0; });
+
+  var wSheet = getSheet('Withdrawals');
+  var wRows  = wSheet ? filterByBranch(sheetToObjects(wSheet), branchId, role) : [];
+  var totalSalesRevenue = 0;
+  wRows.forEach(function(w) {
+    if (w.status !== 'completed') return;
+    if (w.type !== 'normal' && w.type !== 'return') return;
+    var items = [];
+    try { items = JSON.parse(w.items); } catch (_) { items = []; }
+    var sign = (w.type === 'return') ? -1 : 1;
+    items.forEach(function(it) {
+      var qty  = parseFloat(it.quantity) || 0;
+      var sell = sellMap[String(it.product_id)];
+      if (sell === undefined || sell === null || sell === 0) sell = parseFloat(it.unit_price) || 0;
+      totalSalesRevenue += sign * sell * qty;
+    });
+  });
+
+  var net = totalSalesRevenue - totalImportCost - totalExpenses;
+
+  var wallets = Object.keys(walletMap).map(function(k) {
+    var w = walletMap[k];
+    var share     = totalContrib > 0 ? w.contribution / totalContrib : 0;
+    var allocated = share * net;
+    return {
+      owner:        w.owner,
+      contribution: w.contribution,
+      count:        w.count,
+      share:        share,
+      allocated:    allocated,
+      balance:      w.contribution + allocated
+    };
+  }).sort(function(a, b) { return b.contribution - a.contribution; });
+
+  return {
+    success: true,
+    data: {
+      wallets: wallets,
+      fund: {
+        contributions: totalContrib,
+        salesRevenue:  totalSalesRevenue,
+        importCost:    totalImportCost,
+        expenses:      totalExpenses,
+        net:           net,
+        balance:       totalContrib + net
       }
     }
   };

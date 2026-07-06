@@ -107,6 +107,7 @@ const API = (() => {
     deleteIncome:          (id) => post({ action: 'deleteIncome', token: Auth.getToken(), id }),
     getIncomeCategories:   ()   => get('getIncomeCategories'),
     getIncomeSummary:      (month, year) => get('getIncomeSummary', { month, year, branch_id: Auth.getBranchId() }),
+    getWallets:            ()   => get('getWallets', { branch_id: Auth.getBranchId() }),
   };
 })();
 
