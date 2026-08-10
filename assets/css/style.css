@@ -818,6 +818,35 @@ textarea.form-control { resize: vertical; min-height: 72px; line-height: 1.6; }
 .bstat-label { color: #64748b; }
 .bstat-val { font-weight: 600; color: #1e293b; }
 
+/* ===================== AUTOCOMPLETE ===================== */
+.ac-wrap { position: relative; }
+.ac-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  z-index: 1060;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15,23,42,.12);
+}
+.ac-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: .88rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ac-item:last-child { border-bottom: none; }
+.ac-item:hover,
+.ac-item.active { background: #eff6ff; }
+.ac-item .ac-name { font-weight: 600; color: #1e293b; }
+.ac-item .ac-meta { font-size: .78rem; color: #64748b; }
+.ac-item mark { background: #fde68a; padding: 0; }
+.ac-empty { padding: 10px 12px; font-size: .85rem; color: #94a3b8; }
+
 /* ===================== RESPONSIVE ===================== */
 @media (max-width: 991.98px) {
   :root { --sidebar-width: 0px; }

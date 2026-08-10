@@ -185,6 +185,17 @@ App = {
 - `populateProductSelects()` target เฉพาะ `.product-select` class
 - `.po-product-select` และ `.wd-product-select` ใน dynamic rows ต้อง build `<option>` จาก `App.products` ตอน `addPoItem()` / `addWdItem()` โดยตรง
 
+### Autocomplete Engine (app.js)
+
+ใช้ที่ **บิลขาย** (`/dashboard/withdrawal/`): ช่องผู้รับสินค้า + ช่องสินค้าในทุกแถวรายการ
+
+- โครง DOM: `.ac-wrap` > `input.ac-input[data-ac=<type>]` + `div.ac-list` + `select.d-none`
+- `<select>` ยังเป็น **source of truth** (ซ่อนไว้) → `saveWithdrawal()`, `onWdProductChange()`, handler เติมแผนก ใช้โค้ดเดิมไม่ต้องแก้
+- ชนิดนิยามใน `AC_TYPES` — `recipient` (ค้น ชื่อ/แผนก/ตำแหน่ง/เบอร์/เลขภาษี) และ `product` (ค้น ชื่อ/code/หมวด/หน่วย, source = `wdBranchProducts()` จึงผูกกับสาขาที่เลือก)
+- ค้นแบบ multi-token (ทุก token ต้องเจอ), จำกัด `AC_LIMIT = 50`, ไฮไลท์ด้วย `<mark>`
+- คีย์บอร์ด ↑↓ Enter Esc; คลิกใช้ `mousedown` (blur ยิงก่อน click); `acSync()` เขียนข้อความกลับให้ตรงกับ id ที่เลือกจริงเสมอ
+- เพิ่มชนิดใหม่ = เติม entry ใน `AC_TYPES` + ใส่โครง DOM ข้างบน ไม่ต้องแตะ event handler
+
 ---
 
 ## API Methods (api.js)

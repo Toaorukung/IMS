@@ -271,6 +271,7 @@ function populateRecipientSelects() {
   ).join('');
   const label = typeof t === 'function' ? t('select_recipient') : '-- เลือกผู้รับ --';
   $('#wd-recipient').html(`<option value="">${label}</option>` + opts);
+  syncWdRecipientSearch();
 }
 
 // ============================================================
@@ -1615,12 +1616,18 @@ function addWdItem() {
     `<option value="${p.id}" data-name="${p.name}" data-unit="${p.unit}" data-cost="${p.cost_price}">${p.name} (${p.code || '-'})</option>`
   ).join('');
   const placeholder = branchChosen ? '-- เลือกสินค้า --' : '-- เลือกสาขาก่อน --';
+  const acHint = branchChosen ? 'พิมพ์ชื่อ / รหัสสินค้า เพื่อค้นหา...' : 'เลือกสาขาก่อน';
   const html = `<div class="item-row" id="wdi-${id}">
     <div class="row g-2 align-items-end">
       <div class="col-md-5">
         <label class="form-label small mb-1">สินค้า</label>
-        <select class="form-select form-select-sm wd-product-select" onchange="onWdProductChange(this)">
-          <option value="">${placeholder}</option>${prodOpts}</select>
+        <div class="ac-wrap">
+          <input type="text" class="form-control form-control-sm ac-input" data-ac="product" autocomplete="off"
+                 placeholder="${acHint}"${branchChosen ? '' : ' disabled'}>
+          <div class="ac-list d-none"></div>
+          <select class="form-select form-select-sm wd-product-select d-none" onchange="onWdProductChange(this)">
+            <option value="">${placeholder}</option>${prodOpts}</select>
+        </div>
       </div>
       <div class="col-md-2">
         <label class="form-label small mb-1">คงเหลือ</label>
@@ -1666,6 +1673,166 @@ $('#wd-recipient').on('change', function () {
   const opt = $(this).find('option:selected');
   $('#wd-department').val(opt.data('dept') || '');
 });
+
+/* ============================================================
+   AUTOCOMPLETE ENGINE (ใช้ร่วม: ผู้รับสินค้า + สินค้าในบิลขาย)
+
+   โครงสร้าง DOM ที่ต้องมี:
+     <div class="ac-wrap">
+       <input class="ac-input" data-ac="ชนิด">   ← ช่องพิมพ์ค้นหา (ที่ผู้ใช้เห็น)
+       <div class="ac-list d-none"></div>        ← ลิสต์ผลลัพธ์
+       <select class="d-none">…</select>         ← ค่าจริงที่ส่งเข้า logic เดิม (source of truth)
+     </div>
+   ============================================================ */
+const AC_LIMIT = 50;
+let acActive = -1;   // index ของรายการที่ไฮไลท์ด้วยคีย์บอร์ด (เปิดได้ทีละลิสต์)
+
+function acEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function acHighlight(text, tokens) {
+  let html = acEscape(text);
+  tokens.forEach(function (tk) {
+    if (!tk) return;
+    const re = new RegExp('(' + tk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+    html = html.replace(re, '<mark>$1</mark>');
+  });
+  return html;
+}
+function acTokens(q) {
+  return String(q || '').trim().split(/\s+/).filter(Boolean);
+}
+
+// นิยามแต่ละชนิด: แหล่งข้อมูล / ฟิลด์ที่ค้นได้ / ข้อความที่แสดง / hook หลังเลือก
+const AC_TYPES = {
+  recipient: {
+    source:  function () { return App.recipients || []; },
+    fields:  function (r) { return [r.name, r.department, r.position, r.phone, r.tax_id]; },
+    label:   function (r) { return r.name; },
+    meta:    function (r) { return [r.department, r.position, r.phone].filter(Boolean).join(' · '); },
+    display: function (r) { return r.name; },
+    empty:   'ไม่พบผู้รับที่ตรงกับคำค้น',
+    afterPick: function (sel) { $(sel).trigger('change'); }   // เติมแผนกอัตโนมัติ
+  },
+  product: {
+    source:  function () { return wdBranchProducts(); },      // เฉพาะสินค้าของสาขาที่เลือก
+    fields:  function (p) { return [p.name, p.code, p.category, p.unit]; },
+    label:   function (p) { return `${p.name} (${p.code || '-'})`; },
+    meta:    function (p) {
+      const si = (App.stock || []).find(function (s) { return s.product_id === p.id; });
+      const avail = si ? `คงเหลือ ${si.quantity} ${si.unit || p.unit || ''}` : 'คงเหลือ -';
+      return [p.category, avail].filter(Boolean).join(' · ');
+    },
+    display: function (p) { return `${p.name} (${p.code || '-'})`; },
+    empty:   'ไม่พบสินค้าที่ตรงกับคำค้น',
+    afterPick: function (sel) { onWdProductChange(sel); }      // เติมคงเหลือ/ราคา + รวมยอด
+  }
+};
+
+function acCfg($inp)   { return AC_TYPES[$inp.data('ac')]; }
+function acList($inp)  { return $inp.closest('.ac-wrap').find('.ac-list'); }
+function acSelect($inp){ return $inp.closest('.ac-wrap').find('select'); }
+
+function acFilter(cfg, q) {
+  const rows = cfg.source() || [];
+  const tokens = acTokens(q).map(function (tk) { return tk.toLowerCase(); });
+  if (!tokens.length) return rows.slice(0, AC_LIMIT);
+  return rows.filter(function (row) {
+    const hay = cfg.fields(row).join(' ').toLowerCase();
+    return tokens.every(function (tk) { return hay.indexOf(tk) !== -1; });
+  }).slice(0, AC_LIMIT);
+}
+
+function acOpen($inp) {
+  const cfg = acCfg($inp);
+  if (!cfg) return;
+  const $list = acList($inp);
+  const q = $inp.val();
+  const rows = acFilter(cfg, q);
+  acActive = -1;
+  if (!rows.length) {
+    $list.html(`<div class="ac-empty">${cfg.empty}</div>`).removeClass('d-none');
+    return;
+  }
+  const tokens = acTokens(q);
+  $list.html(rows.map(function (row) {
+    const meta = cfg.meta(row);
+    return `<div class="ac-item" data-id="${acEscape(row.id)}">
+      <div class="ac-name">${acHighlight(cfg.label(row), tokens)}</div>
+      ${meta ? `<div class="ac-meta">${acHighlight(meta, tokens)}</div>` : ''}
+    </div>`;
+  }).join('')).removeClass('d-none');
+}
+
+function acClose($inp) {
+  acList($inp).addClass('d-none').html('');
+  acActive = -1;
+}
+
+// เขียนข้อความในช่องค้นหาให้ตรงกับค่าที่เลือกอยู่จริงใน <select> เสมอ
+function acSync($inp) {
+  const cfg = acCfg($inp);
+  if (!cfg) return;
+  const id = acSelect($inp).val();
+  if (!id) { $inp.val(''); return; }
+  const row = (cfg.source() || []).find(function (x) { return String(x.id) === String(id); });
+  $inp.val(row ? cfg.display(row) : '');
+}
+
+function acPick($inp, id) {
+  const cfg = acCfg($inp);
+  const sel = acSelect($inp).val(id).get(0);
+  if (cfg && cfg.afterPick && sel) cfg.afterPick(sel);
+  acSync($inp);
+  acClose($inp);
+}
+
+function acMove($inp, delta) {
+  const $items = acList($inp).find('.ac-item');
+  if (!$items.length) return;
+  acActive = (acActive + delta + $items.length) % $items.length;
+  $items.removeClass('active').eq(acActive).addClass('active');
+  const el = $items.get(acActive);
+  if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+}
+
+$(document)
+  .on('focus input', '.ac-input', function () { acOpen($(this)); })
+  .on('keydown', '.ac-input', function (e) {
+    const $inp = $(this);
+    const open = !acList($inp).hasClass('d-none');
+    if (e.key === 'ArrowDown')      { e.preventDefault(); if (!open) acOpen($inp); else acMove($inp, 1); }
+    else if (e.key === 'ArrowUp')   { e.preventDefault(); if (open) acMove($inp, -1); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();   // กัน form submit
+      const $items = acList($inp).find('.ac-item');
+      const idx = acActive >= 0 ? acActive : ($items.length === 1 ? 0 : -1);
+      if (open && idx >= 0) acPick($inp, $items.eq(idx).data('id'));
+    }
+    else if (e.key === 'Escape')    { acClose($inp); acSync($inp); }
+  })
+  // mousedown ยิงก่อน blur — ไม่งั้นลิสต์ถูกปิดไปก่อนคลิกติด
+  .on('mousedown', '.ac-list .ac-item', function (e) {
+    e.preventDefault();
+    acPick($(this).closest('.ac-wrap').find('.ac-input'), $(this).data('id'));
+  })
+  .on('blur', '.ac-input', function () {
+    const $inp = $(this);
+    setTimeout(function () { acClose($inp); acSync($inp); }, 120);
+  })
+  .on('mousedown', function (e) {
+    if ($(e.target).closest('.ac-wrap').length) return;
+    $('.ac-list').addClass('d-none').html('');
+    acActive = -1;
+  });
+
+// เรียกจาก populateRecipientSelects() หลัง rebuild <option>
+function syncWdRecipientSearch() {
+  const $inp = $('#wd-recipient-search');
+  if ($inp.length) acSync($inp);
+}
 
 async function saveWithdrawal() {
   const recipientId   = $('#wd-recipient').val();
