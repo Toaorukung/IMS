@@ -18,7 +18,7 @@ function setupAllSheets() {
     'Products':    ['id','code','name','category','unit','cost_price','selling_price','min_stock','notes','created_at','status','branch_id'],
     'Stock':       ['id','product_id','product_name','product_code','unit','quantity','cost_price','min_stock','last_updated','branch_id'],
     'Imports':     ['id','order_date','supplier','items','yuan_amount','exchange_rate','base_cost_thb','freight_cost','import_costs','additional_costs','total_cost','status','notes','created_at','created_by','branch_id'],
-    'Withdrawals': ['id','withdrawal_date','recipient_id','recipient_name','department','items','total_value','type','notes','status','created_by','created_at','branch_id','doc_no','deposit'],
+    'Withdrawals': ['id','withdrawal_date','recipient_id','recipient_name','department','items','total_value','type','notes','status','created_by','created_at','branch_id','doc_no','deposit','vat_rate'],
     'Recipients':  ['id','name','department','position','phone','email','notes','status','created_at','branch_id','tax_id','address'],
     'Transfers':   ['id','transfer_date','product_id','product_name','product_code','quantity','from_branch_id','to_branch_id','transport_cost','labor_cost','unit_cost','dest_unit_cost','total_value','notes','created_by','created_at','batch_id','status'],
     'Expenses':    ['id','date','category','description','amount','branch_id','created_at','created_by'],
@@ -1130,6 +1130,8 @@ function updateWithdrawal(data) {
   if (data.withdrawal_date !== undefined && data.withdrawal_date !== '') updates.withdrawal_date = data.withdrawal_date;
   if (data.doc_no  !== undefined) updates.doc_no  = data.doc_no;
   if (data.deposit !== undefined) updates.deposit = parseFloat(data.deposit) || 0;
+  // อัตรา VAT ของบิล (7 = คิด VAT, 0 = ไม่คิด) — ราคาใน items เก็บแบบรวม VAT ตามอัตรานี้เสมอ
+  if (data.vat_rate !== undefined) updates.vat_rate = parseFloat(data.vat_rate) || 0;
 
   // แก้รายการสินค้า → เก็บ items (JSON) + คำนวณ total_value ใหม่ (= ผลรวม qty × unit_price)
   if (Array.isArray(data.items)) {

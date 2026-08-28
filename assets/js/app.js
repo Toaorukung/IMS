@@ -2054,10 +2054,11 @@ function printReceipt(w) {
 
   // ผู้ขาย (หัวกระดาษ) = สาขาที่ออกเอกสาร
   const branch = (App.branches || []).find(b => String(b.id) === String(w.branch_id)) || {};
-  const sellerTh   = branch.name || (App.user && App.user.branch_name) || CONFIG.APP_NAME;
-  const sellerEn   = branch.name_en || '';
-  const sellerAddr = branch.address || '';
-  const sellerTel  = branch.phone || '';
+  // หัวกระดาษผู้ขาย = ชื่อบริษัท (คงที่) ไม่ใช้ชื่อสาขา
+  const sellerEnName = 'good kat organic company limited';
+  const sellerTh   = 'บริษัท กู๊ด แค๊ท ออร์แกนิก จำกัด';
+  const sellerAddr = '1109/78 ถนน บางแค เขตบางแค แขวง บางแค 10160';
+  const sellerTel  = '0894990324';
   const sellerTax  = branch.tax_id || '';
 
   // ลูกค้า = ผู้รับสินค้า
@@ -2070,10 +2071,14 @@ function printReceipt(w) {
   const prodById = {};
   (App.products || []).forEach(p => { prodById[String(p.id)] = p; });
 
-  // ราคารวม VAT แล้ว → แตก VAT ออก (7%)  [ค่าตั้งต้น — สคริปต์ใน preview จะคำนวณซ้ำให้ลงตัว]
+  // อัตรา VAT ของบิลนี้ — คอลัมน์ว่าง/ไม่มี = 7 (ค่าเริ่มต้น), 0 = ไม่คิด VAT
+  const vatRate = (w.vat_rate === '' || w.vat_rate === null || w.vat_rate === undefined) ? 7 : (parseFloat(w.vat_rate) || 0);
+  const vatMul  = 1 + vatRate / 100;
+
+  // ราคาใน items เก็บแบบรวม VAT แล้ว → แตก VAT ออก  [ค่าตั้งต้น — สคริปต์ใน preview จะคำนวณซ้ำให้ลงตัว]
   const grand        = Math.round((parseFloat(w.total_value) || 0) * 100) / 100; // ยอดสุทธิ (รวม VAT)
-  const preVat       = Math.round((grand / 1.07) * 100) / 100;                   // รวมเงิน (ก่อน VAT)
-  const vat          = Math.round((grand - preVat) * 100) / 100;                 // VAT 7%
+  const preVat       = Math.round((grand / vatMul) * 100) / 100;                 // รวมเงิน (ก่อน VAT)
+  const vat          = Math.round((grand - preVat) * 100) / 100;                 // VAT
   const deposit      = Math.round((parseFloat(w.deposit) || 0) * 100) / 100;     // เงินมัดจำ (แก้ไขได้)
   const afterDeposit = preVat - deposit;
 
@@ -2088,7 +2093,7 @@ function printReceipt(w) {
   let rowsHtml = items.map((it, idx) => {
     const qty     = parseFloat(it.quantity) || 0;
     const unitInc = parseFloat(it.unit_price) || 0;
-    const unitEx  = unitInc / 1.07;
+    const unitEx  = unitInc / vatMul;
     const lineEx  = qty * unitEx;
     const unit    = it.unit || (prodById[String(it.product_id)] && prodById[String(it.product_id)].unit) || '';
     return `<tr class="itemrow" data-pid="${escA(it.product_id || '')}">
@@ -2107,7 +2112,7 @@ function printReceipt(w) {
 
   const win = window.open('', '_blank', 'width=820,height=1000');
   win.document.write(`<!DOCTYPE html><html lang="th"><head>
-    <meta charset="UTF-8"><title>ใบกำกับภาษี ${docNo}</title>
+    <meta charset="UTF-8"><title>${vatRate ? 'ใบกำกับภาษี' : 'ใบส่งสินค้า'} ${docNo}</title>
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
       *{box-sizing:border-box}
@@ -2148,6 +2153,8 @@ function printReceipt(w) {
       .toolbar{text-align:center;margin-top:16px;display:flex;gap:10px;justify-content:center}
       .toolbar button{padding:8px 18px;font-size:14px;cursor:pointer;border:1px solid #888;border-radius:6px;background:#fff}
       .toolbar button.primary{background:#e07b1a;color:#fff;border-color:#e07b1a}
+      .vattoggle{display:flex;align-items:center;gap:6px;font-size:13.5px;border:1px solid #888;border-radius:6px;padding:0 12px;cursor:pointer;user-select:none;background:#fff}
+      .vattoggle input{width:auto;margin:0;cursor:pointer}
       /* ช่องแก้ไข: ปกติดูเหมือนข้อความธรรมดา, เข้าโหมดแก้ไขจึงมีกรอบ */
       input,textarea{font-family:inherit;font-size:inherit;color:#111;border:none;background:transparent;padding:0;margin:0;width:100%}
       input:disabled,textarea:disabled{-webkit-text-fill-color:#111;opacity:1;color:#111}
@@ -2173,16 +2180,17 @@ function printReceipt(w) {
     <div class="sheet">
       <div class="top">
         <div class="seller">
-          ${sellerEn ? `<h1>${sellerTh}</h1><h2>${sellerEn}</h2>` : `<h1>${sellerTh}</h1>`}
+          <h1>${sellerEnName}</h1>
+          <div class="ln">${sellerTh}</div>
           ${sellerAddr ? `<div class="ln">${sellerAddr}</div>` : ''}
           <div class="ln">${sellerTel ? 'โทร. ' + sellerTel : ''}${sellerTel && sellerTax ? '&nbsp;&nbsp;&nbsp;' : ''}${sellerTax ? 'เลขประจำตัวผู้เสียภาษี ' + sellerTax : ''}</div>
         </div>
-        <div class="badge-box">สำหรับบริษัท</div>
+        <div class="badge-box">สำหรับบริษัท/ลูกค้า</div>
       </div>
 
       <div class="doctype">
-        ต้นฉบับใบกำกับภาษี / ใบส่งสินค้า / ใบแจ้งหนี้
-        <div class="en">ORIGINAL TAX INVOICE / DELIVERY ORDER / INVOICE</div>
+        <span id="docTypeTh">${vatRate ? 'ต้นฉบับใบกำกับภาษี / ใบส่งสินค้า / ใบแจ้งหนี้' : 'ต้นฉบับใบส่งสินค้า / ใบแจ้งหนี้'}</span>
+        <div class="en" id="docTypeEn">${vatRate ? 'ORIGINAL TAX INVOICE / DELIVERY ORDER / INVOICE' : 'ORIGINAL DELIVERY ORDER / INVOICE'}</div>
       </div>
 
       <div class="cust">
@@ -2223,7 +2231,7 @@ function printReceipt(w) {
           <div class="totrow"><div class="k">หัก เงินมัดจำ<small>DEPOSIT</small></div>
             <div class="v"><span id="depV">${deposit ? money(deposit) : '-'}</span><input id="depIn" class="num depedit" type="number" min="0" step="any" value="${deposit}" oninput="recompute()"></div></div>
           <div class="totrow"><div class="k">มูลค่าสินค้าหลังหักเงินมัดจำ<small>TOTAL AMOUNT AFTER DEPOSIT</small></div><div class="v" id="afterV">${money(afterDeposit)}</div></div>
-          <div class="totrow"><div class="k vatcell">ภาษีมูลค่าเพิ่ม <span class="vatbox">7%</span><small>VAT</small></div><div class="v" id="vatV">${money(vat)}</div></div>
+          <div class="totrow" id="vatRow" style="${vatRate ? '' : 'display:none'}"><div class="k vatcell">ภาษีมูลค่าเพิ่ม <span class="vatbox">7%</span><small>VAT</small></div><div class="v" id="vatV">${money(vat)}</div></div>
           <div class="totrow grand"><div class="k">ยอดเงินสุทธิ<small>GRAND TOTAL</small></div><div class="v" id="grandV">${money(grand)}</div></div>
         </div>
       </div>
@@ -2236,6 +2244,7 @@ function printReceipt(w) {
 
       <div class="edithint no-print">โหมดแก้ไข — แก้ช่องที่มีกรอบสีส้มได้ &middot; การแก้รายการสินค้าจะอัพเดทยอดบิล แต่ <b>ไม่</b> ปรับสต็อก</div>
       <div class="toolbar no-print">
+        <label class="vattoggle"><input type="checkbox" id="vatChk" ${vatRate ? 'checked' : ''} onchange="setVat(this.checked)"> คิด VAT 7%</label>
         <button id="btnEdit" onclick="toggleEdit()">✏️ แก้ไข</button>
         <button id="btnSave" class="primary" style="display:none" onclick="saveBill()">💾 บันทึก</button>
         <button onclick="window.print()">🖨️ พิมพ์</button>
@@ -2244,6 +2253,8 @@ function printReceipt(w) {
     <script>
       var CTX = ${JSON.stringify({ id: w.id, recipient_id: w.recipient_id || '' })};
       var editing = false;
+      var VAT_RATE = 7;               // อัตราเมื่อเปิด VAT
+      var vatOn = ${vatRate ? 'true' : 'false'};
       function money(n){ n = parseFloat(n); if (isNaN(n)) n = 0; return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
       function words(n){ try { return (window.opener && window.opener.bahtText) ? window.opener.bahtText(n) : ''; } catch (e) { return ''; } }
       function setV(id, t){ var el = document.getElementById(id); if (el) el.textContent = t; }
@@ -2259,12 +2270,23 @@ function printReceipt(w) {
         }
         pre = Math.round(pre * 100) / 100;                          // รวมเงิน = ผลรวมแถว (ลงตัวเสมอ)
         var dep = parseFloat(document.getElementById('depIn').value) || 0;
-        var grand = Math.round(pre * 1.07 * 100) / 100;             // รวม VAT
+        var mul = vatOn ? (1 + VAT_RATE / 100) : 1;
+        var grand = Math.round(pre * mul * 100) / 100;              // รวม VAT (ถ้าปิด VAT = เท่ากับ pre)
         var vat = Math.round((grand - pre) * 100) / 100;
         var after = Math.round((pre - dep) * 100) / 100;
         setV('preVatV', money(pre)); setV('depV', dep ? money(dep) : '-');
         setV('afterV', money(after)); setV('vatV', money(vat)); setV('grandV', money(grand));
         setV('wordsV', '( ' + words(grand) + ' )');
+      }
+      // เปิด/ปิด VAT — ซ่อนบรรทัด VAT + สลับชื่อเอกสาร (ไม่มี VAT = ไม่ใช่ใบกำกับภาษี) แล้วคำนวณยอดใหม่
+      function setVat(on){
+        vatOn = !!on;
+        document.getElementById('vatChk').checked = vatOn;
+        document.getElementById('vatRow').style.display = vatOn ? '' : 'none';
+        setV('docTypeTh', vatOn ? 'ต้นฉบับใบกำกับภาษี / ใบส่งสินค้า / ใบแจ้งหนี้' : 'ต้นฉบับใบส่งสินค้า / ใบแจ้งหนี้');
+        setV('docTypeEn', vatOn ? 'ORIGINAL TAX INVOICE / DELIVERY ORDER / INVOICE' : 'ORIGINAL DELIVERY ORDER / INVOICE');
+        document.title = (vatOn ? 'ใบกำกับภาษี ' : 'ใบส่งสินค้า ') + getText('docNoV');
+        recompute();
       }
       function renumber(){ var r = document.querySelectorAll('tr.itemrow .idx'); for (var i = 0; i < r.length; i++) r[i].textContent = i + 1; }
       function delRow(btn){ var tr = btn.closest('tr'); if (tr) tr.remove(); renumber(); recompute(); }
@@ -2289,7 +2311,7 @@ function printReceipt(w) {
       function toggleEdit(force){
         editing = (force === undefined) ? !editing : !!force;
         document.body.classList.toggle('editing', editing);
-        var ins = document.querySelectorAll('input'); for (var i = 0; i < ins.length; i++) ins[i].disabled = !editing;
+        var ins = document.querySelectorAll('input:not(#vatChk)'); for (var i = 0; i < ins.length; i++) ins[i].disabled = !editing;
         var ed = document.querySelectorAll('[data-edit]'); for (var j = 0; j < ed.length; j++) ed[j].contentEditable = editing ? 'true' : 'false';
         document.getElementById('btnEdit').textContent = editing ? '✓ เสร็จ' : '✏️ แก้ไข';
         document.getElementById('btnSave').style.display = editing ? '' : 'none';
@@ -2303,10 +2325,11 @@ function printReceipt(w) {
           var unit = rows[i].querySelector('.unit').value.trim();
           var ex = parseFloat(rows[i].querySelector('.price').value) || 0;
           if (!name && q <= 0) continue;
+          var mul = vatOn ? (1 + VAT_RATE / 100) : 1;
           items.push({ product_id: rows[i].getAttribute('data-pid') || '', product_name: name, unit: unit,
-                       quantity: q, unit_price: Math.round(ex * 1.07 * 100) / 100 }); // เก็บราคา/หน่วย แบบรวม VAT
+                       quantity: q, unit_price: Math.round(ex * mul * 100) / 100 }); // เก็บราคา/หน่วย แบบรวม VAT
         }
-        return { id: CTX.id, recipient_id: CTX.recipient_id,
+        return { id: CTX.id, recipient_id: CTX.recipient_id, vat_rate: vatOn ? VAT_RATE : 0,
                  recipient_name: getText('custNameV'), cust_address: getText('custAddrV'), cust_tax: getText('custTaxV'),
                  doc_no: getText('docNoV'), withdrawal_date: parseDate(getText('dateV')),
                  deposit: parseFloat(document.getElementById('depIn').value) || 0, items: items };
@@ -2339,6 +2362,7 @@ async function saveEditedInvoice(payload) {
       withdrawal_date: payload.withdrawal_date,
       doc_no:          payload.doc_no,
       deposit:         payload.deposit,
+      vat_rate:        payload.vat_rate,
       items:           payload.items
     });
     if (!wRes || !wRes.success) return { success: false, message: (wRes && wRes.message) || 'อัพเดทบิลขายไม่สำเร็จ' };

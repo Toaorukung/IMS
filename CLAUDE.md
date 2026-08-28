@@ -253,6 +253,7 @@ pending → in-transit → received
 - ปุ่มใน toolbar: **แก้ไข** (toggle `body.editing`) → **บันทึก** (`saveBill()`) → **พิมพ์**
 - ช่องแก้ไข: ลูกค้า (ชื่อ/ที่อยู่/เลขภาษี = `contenteditable [data-edit]`), เลขที่เอกสาร, วันที่, เงินมัดจำ, รายการสินค้า (qty/หน่วย/ราคา + เพิ่ม/ลบแถว). หัวกระดาษผู้ขายมาจาก Branches (แก้ที่หน้าจัดการสาขา)
 - ราคา/หน่วยในใบ = **ก่อน VAT**; `recompute()` รวมแถว → VAT 7% → ยอดสุทธิ (คอลัมน์รวมลงตัวเสมอ)
+- **ปิด/เปิด VAT 7%** ได้ที่ checkbox `#vatChk` ใน toolbar → `setVat(on)` ซ่อนบรรทัด VAT + สลับชื่อเอกสาร (ไม่มี VAT = "ใบส่งสินค้า / ใบแจ้งหนี้" ไม่ใช่ใบกำกับภาษี) + `recompute()`. เก็บลงคอลัมน์ `Withdrawals.vat_rate` (`7` = คิด VAT, `0` = ไม่คิด; ว่าง/บิลเก่า = 7) ตอนกดบันทึก — `items.unit_price` เก็บแบบ**รวม VAT ตามอัตรานี้เสมอ** จึงต้องอ่าน `vat_rate` มาแตกราคาตอนเปิดใบซ้ำ
 - บันทึก: popup เรียก `window.opener.saveEditedInvoice(payload)` (ต้องเป็น classic script — function เป็น global บน window) → `API.updateWithdrawal` (เก็บ items เป็นราคา**รวม VAT**, server คำนวณ `total_value`) + `API.updateRecipient` (ที่อยู่/เลขภาษีลูกค้า)
 - ⚠️ การแก้รายการสินค้า **ไม่** ปรับสต็อก (FIFO) — เป็นการแก้เอกสารบิลเท่านั้น
 - ต้องรัน `setupAllSheets()` ใหม่เพื่อเพิ่มคอลัมน์ `doc_no`, `deposit` ใน Withdrawals (migration เติมคอลัมน์ที่ขาดอัตโนมัติ)
